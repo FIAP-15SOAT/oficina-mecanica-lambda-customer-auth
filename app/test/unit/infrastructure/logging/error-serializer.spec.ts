@@ -1,0 +1,135 @@
+import {
+  describeError,
+  resolveErrorMessage,
+  resolveErrorType,
+} from '@infrastructure/logging/error-serializer';
+import { REDACTED } from '@infrastructure/logging/redaction/text-sanitizer';
+
+class DatabaseOperationFailure extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = this.constructor.name;
+  }
+}
+
+describe('resolveErrorType', () => {
+  it('should use the name of a specific error', () => {
+    expect(resolveErrorType(new DatabaseOperationFailure('falhou'))).toBe(
+      'DatabaseOperationFailure',
+    );
+  });
+
+  /**
+   * Quando uma biblioteca embrulha o erro real num `Error` genérico, o nome útil
+   * está mais abaixo na cadeia — reportar `"Error"` esconderia qual camada
+   * quebrou.
+   */
+  it('should prefer the specific name found deeper in the cause chain', () => {
+    const wrapped = new Error('falha ao aprovar', {
+      cause: new DatabaseOperationFailure('conexão perdida'),
+    });
+
+    expect(resolveErrorType(wrapped)).toBe('DatabaseOperationFailure');
+  });
+
+  it('should fall back to the generic name when the whole chain is generic', () => {
+    expect(resolveErrorType(new Error('genérico'))).toBe('Error');
+  });
+
+  it('should classify a thrown string', () => {
+    expect(resolveErrorType('falhou')).toBe('Error');
+  });
+
+  it('should classify a thrown value that is neither error nor string', () => {
+    expect(resolveErrorType({ code: 42 })).toBe('UnknownError');
+  });
+
+  it('should report an unknown type when there is nothing to inspect', () => {
+    expect(resolveErrorType(undefined)).toBe('UnknownError');
+  });
+
+  it('should use the constructor name when the error carries an empty name', () => {
+    const anonymous = new Error('sem nome');
+    anonymous.name = '';
+
+    expect(resolveErrorType(anonymous)).toBe('Error');
+  });
+});
+
+describe('resolveErrorMessage', () => {
+  it('should sanitize the message of an error', () => {
+    expect(resolveErrorMessage(new Error('cliente 123.456.789-09'))).toBe('cliente ***.***.789-09');
+  });
+
+  it('should sanitize a thrown string', () => {
+    expect(resolveErrorMessage('Bearer abcdef1234567890')).toBe(REDACTED);
+  });
+
+  it('should describe a thrown value that carries no message', () => {
+    expect(resolveErrorMessage({ code: 42 })).toBe('Unknown error');
+  });
+});
+
+describe('describeError', () => {
+  it('should map an error onto the three semantic convention attributes', () => {
+    const attributes = describeError(new DatabaseOperationFailure('conexão perdida'));
+
+    expect(attributes['exception.type']).toBe('DatabaseOperationFailure');
+    expect(attributes['exception.message']).toBe('conexão perdida');
+    expect(attributes['exception.stacktrace']).toContain('DatabaseOperationFailure');
+  });
+
+  it('should fold a chained cause into the stacktrace without a cause namespace', () => {
+    const attributes = describeError(
+      new Error('falha ao aprovar', { cause: new TypeError('camada de baixo') }),
+    );
+
+    expect(attributes['exception.stacktrace']).toContain('Caused by:');
+    expect(Object.keys(attributes).some((key) => key.startsWith('exception.cause'))).toBe(false);
+  });
+
+  it('should omit the stacktrace when no frame is available', () => {
+    const attributes = describeError('apenas texto');
+
+    expect(attributes['exception.type']).toBe('Error');
+    expect(attributes).not.toHaveProperty(['exception.stacktrace']);
+  });
+
+  it('should sanitize sensitive content found inside the stacktrace', () => {
+    const error = new Error('falha');
+    error.stack = 'Error: falha\n    at handler (postgresql://u:senha@db/oficina)';
+
+    expect(describeError(error)['exception.stacktrace']).not.toContain('senha');
+  });
+
+  /**
+   * `cause` pode formar ciclo e a cadeia pode ser arbitrariamente longa; sem
+   * limite e sem detecção, serializar o erro trava o processo.
+   */
+  it('should stop at a cycle in the cause chain', () => {
+    const first = new Error('primeiro');
+    const second = new Error('segundo', { cause: first });
+    (first as Error & { cause?: unknown }).cause = second;
+
+    expect(() => describeError(first)).not.toThrow();
+    expect(describeError(first)['exception.message']).toBe('primeiro');
+  });
+
+  it('should bound the depth of the cause chain', () => {
+    let error = new Error('nível 0');
+
+    for (let level = 1; level <= 10; level += 1) {
+      error = new Error(`nível ${level}`, { cause: error });
+    }
+
+    const stacktrace = describeError(error)['exception.stacktrace'] ?? '';
+
+    expect(stacktrace.split('Caused by:')).toHaveLength(4);
+  });
+
+  it('should stop the chain at a cause that is not an error', () => {
+    const attributes = describeError(new Error('falha', { cause: 'motivo textual' }));
+
+    expect(attributes['exception.type']).toBe('Error');
+  });
+});
