@@ -1,0 +1,6 @@
+Diretório reservado.
+
+O código de infraestrutura desta função — função em VPC, os dois segredos no
+Secrets Manager, concorrência reservada e a decisão sobre intermediador de
+conexões — será adicionado aqui por uma change própria. Nada neste repositório
+depende do conteúdo deste diretório hoje.
