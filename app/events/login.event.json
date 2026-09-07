@@ -1,0 +1,30 @@
+{
+  "version": "2.0",
+  "routeKey": "POST /customer-auth/login",
+  "rawPath": "/customer-auth/login",
+  "rawQueryString": "",
+  "headers": {
+    "content-type": "application/json",
+    "x-request-id": "evento-de-exemplo"
+  },
+  "requestContext": {
+    "accountId": "000000000000",
+    "apiId": "local",
+    "domainName": "localhost",
+    "domainPrefix": "local",
+    "http": {
+      "method": "POST",
+      "path": "/customer-auth/login",
+      "protocol": "HTTP/1.1",
+      "sourceIp": "127.0.0.1",
+      "userAgent": "invoke"
+    },
+    "requestId": "evento-de-exemplo",
+    "routeKey": "POST /customer-auth/login",
+    "stage": "$default",
+    "time": "31/Aug/2026:12:00:00 +0000",
+    "timeEpoch": 1787232000000
+  },
+  "body": "{\"cpf\":\"123.456.789-09\",\"password\":\"Tech@2026\"}",
+  "isBase64Encoded": false
+}

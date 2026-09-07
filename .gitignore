@@ -1,0 +1,32 @@
+node_modules
+dist
+
+# Keep environment variables out of version control
+.env
+
+# Signing keys: never versioned, in either half
+*.pem
+
+# IDE
+.vscode
+.idea
+
+# Coverage
+coverage
+
+# Packaging artifacts
+*.zip
+
+# Git worktrees
+.worktrees
+
+CLAUDE.md
+.claude
+.codex
+.agent
+.agents
+.github/*
+!.github/workflows/
+!.github/actions/
+openspec/
+superpowers/
