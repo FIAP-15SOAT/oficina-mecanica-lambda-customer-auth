@@ -22,6 +22,12 @@ describe('resolveCorrelationId', () => {
     },
   );
 
+  it('should reuse the base64 request identifier written by the API Gateway', () => {
+    expect(resolveCorrelationId({ [REQUEST_ID_HEADER]: 'DW7LdhXYIAMESCA=' }, INVOCATION_ID)).toBe(
+      'DW7LdhXYIAMESCA=',
+    );
+  });
+
   it('should match the header regardless of case', () => {
     expect(resolveCorrelationId({ 'X-Request-Id': 'req-abc' }, INVOCATION_ID)).toBe('req-abc');
   });
@@ -42,7 +48,7 @@ describe('resolveCorrelationId', () => {
 
   it.each([
     ['spaces', 'req 123'],
-    ['a character outside the alphabet', 'req/123'],
+    ['a character outside the alphabet', 'req#123'],
     ['a length above the limit', 'a'.repeat(129)],
     ['an empty value', ''],
     ['content the sanitizer would rewrite', '12345678909'],
