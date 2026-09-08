@@ -7,7 +7,7 @@ export const REQUEST_ID_HEADER = 'x-request-id';
 export const CORRELATION_ID_HEADER = 'x-correlation-id';
 export const REQUEST_ID_ATTRIBUTE = 'request.id';
 
-const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:+/=-]{1,128}$/;
 
 export function resolveCorrelationId(
   headers: Record<string, string | undefined> | undefined,
