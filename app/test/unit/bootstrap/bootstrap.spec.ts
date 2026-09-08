@@ -3,7 +3,12 @@ import { ConfigurationException } from '@infrastructure/exceptions/configuration
 import { TokenSigningException } from '@infrastructure/exceptions/token-signing.exception';
 import { PinoLoggerAdapter } from '@infrastructure/logging/pino-logger.adapter';
 
-import { getBaseLogger, getDependencies, resetDependencies } from '../../../src/bootstrap';
+import {
+  discardComposition,
+  getBaseLogger,
+  getDependencies,
+  resetDependencies,
+} from '../../../src/bootstrap';
 import { generateKeyPairSync } from 'node:crypto';
 
 jest.mock('@infrastructure/config/secret-resolver', () => {
@@ -53,6 +58,33 @@ describe('bootstrap', () => {
     await dependencies?.pool.end();
     resetDependencies();
     process.env = original;
+  });
+
+  it('should recompose after the memoized composition is discarded', async () => {
+    const first = await getDependencies();
+
+    discardComposition();
+
+    const second = await getDependencies();
+
+    expect(second).not.toBe(first);
+
+    // Só a composição descartada é encerrada aqui: a corrente é a memoizada, e
+    // o afterEach a encerra.
+    await first.pool.end();
+  });
+
+  it('should preserve the base logger when the composition is discarded', async () => {
+    const logger = getBaseLogger();
+
+    const dependencies = await getDependencies();
+
+    discardComposition();
+
+    expect(getBaseLogger()).toBe(logger);
+
+    await dependencies.pool.end();
+    resetDependencies();
   });
 
   it('should wire a controller able to answer an invocation', async () => {

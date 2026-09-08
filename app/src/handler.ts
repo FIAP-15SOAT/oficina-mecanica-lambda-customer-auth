@@ -14,7 +14,9 @@ import {
   resolveTechnicalEvent,
 } from '@infrastructure/serverless/response.translator';
 
-import { Dependencies, getBaseLogger, getDependencies } from './bootstrap';
+import { isDatabaseAuthenticationFailure } from '@infrastructure/persistence/pg/connection';
+
+import { Dependencies, discardComposition, getBaseLogger, getDependencies } from './bootstrap';
 
 /**
  * Começa a composição durante a **inicialização do ambiente**, em vez de esperar
@@ -86,6 +88,18 @@ export async function handler(
 
     if (technicalEvent) {
       logger.event(technicalEvent, {}, error);
+    }
+
+    /**
+     * A credencial lida na composição deixou de valer. Descartar a composição
+     * faz a invocação seguinte reler o segredo, em vez de deixar este ambiente
+     * inutilizável até a plataforma reciclá-lo.
+     *
+     * A resposta ao chamador **não** muda: continua a de indisponibilidade, e a
+     * causa não vaza.
+     */
+    if (composed && isDatabaseAuthenticationFailure(error)) {
+      discardComposition();
     }
 
     response = buildErrorResponse(error);

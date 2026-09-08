@@ -69,6 +69,20 @@ export async function closeDependencies(): Promise<void> {
   );
 }
 
+/**
+ * Descarta a composição memoizada para que a invocação seguinte releia o
+ * segredo do banco.
+ *
+ * A composição vive pelo ambiente de execução e a credencial é lida **uma única
+ * vez**, na inicialização. Sem este descarte, uma troca de credencial a montante
+ * deixaria todo ambiente já aquecido inutilizável até ser reciclado pela
+ * plataforma — e a adoção futura de credencial gerenciada, com troca periódica
+ * automática, exigiria mudança no código desta função.
+ */
+export function discardComposition(): void {
+  cached = undefined;
+}
+
 /** Descarta a composição memoizada. Existe para o teste, não para o runtime. */
 export function resetDependencies(): void {
   cached = undefined;

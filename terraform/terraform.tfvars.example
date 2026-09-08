@@ -1,0 +1,23 @@
+# Todos os valores abaixo tem padrao versionado em `variables.tf`. Este arquivo
+# existe para o caso de uma execucao local precisar divergir — a esteira nao o
+# usa.
+
+# aws_region  = "us-east-1"
+# environment = "prod-simulated"
+
+# Function name. It is a contract with the API Gateway: changing it here requires changing it there.
+# function_name = "lbd-oficina-mecanica-customer-auth"
+
+# Role de execucao pre-existente do laboratorio. Lida por data source.
+# lambda_execution_role_name = "LabRole"
+
+# Reserva de concorrencia. Use -1 quando a cota da conta nao deixar ao menos
+# cem execucoes nao reservadas. Nunca zero: reserva zero desliga a funcao.
+# lambda_reserved_concurrency = 10
+
+# Injetado pela entrega a cada aplicacao.
+# service_version = "dev"
+
+# Camada de coleta. A credencial vem do cofre do environment de producao.
+# enable_telemetry_collection = false
+# telemetry_api_key           = ""

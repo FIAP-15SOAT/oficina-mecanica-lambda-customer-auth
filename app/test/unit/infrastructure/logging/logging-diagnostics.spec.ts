@@ -194,7 +194,7 @@ describe('diagnostics channel — stderr resilience', () => {
       expect(line[name]).toBeDefined();
     }
 
-    expect(line['service.name']).toBe('oficina-mecanica-customer-auth');
+    expect(line['service.name']).toBe('oficina-mecanica-lambda-customer-auth');
     expect(line['deployment.environment.name']).toBeDefined();
     expect(line['oficina.logging.failure.field']).toBe('subjectId');
 

@@ -1,5 +1,5 @@
 {
-  "name": "oficina-mecanica-customer-auth",
+  "name": "oficina-mecanica-lambda-customer-auth",
   "version": "0.0.1",
   "description": "Função serverless para autenticação de clientes",
   "private": true,
@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./jest.e2e.config.ts --runInBand"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.907.0",
     "bcryptjs": "^3.0.2",
     "jose": "^5.10.0",
     "pg": "^8.20.0",
@@ -27,7 +28,6 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@aws-sdk/client-secrets-manager": "^3.907.0",
     "@eslint/js": "^9.18.0",
     "@testcontainers/postgresql": "^11.14.0",
     "@types/aws-lambda": "^8.10.158",

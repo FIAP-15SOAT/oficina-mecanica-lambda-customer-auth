@@ -100,7 +100,6 @@ node -e "console.log(JSON.stringify(require('node:fs').readFileSync('customer-au
 ```bash
 git clone https://github.com/FIAP-15SOAT/oficina-mecanica-app.git
 cd oficina-mecanica-app/app
-git checkout feature/login-cpf   # enquanto o PR 65 não estiver integrado
 cp .env.example .env
 ```
 
@@ -196,9 +195,11 @@ completa de rotas está no README da API.
 npm run build       # dist/handler.js + dist/handler.js.map
 ```
 
-O empacotamento em `.zip` **não** pertence a este repositório: quem monta o
-artefato publicável é a change de infraestrutura, pelo `archive_file` do
-Terraform, a partir de `dist/`.
+O empacotamento em `.zip` não acontece aqui: quem monta o artefato publicável é
+o `archive_file` da stack em [`terraform/`](../terraform/), a partir de `dist/`,
+no momento da aplicação. Uma única fonte de verdade para o conteúdo e para o
+identificador de conteúdo — ver
+[ADR 0004](adr/0004-empacotamento-e-publicacao.md).
 
 O build falha se algum alias de importação sobreviver no pacote — um alias não
 resolvido só quebraria na primeira invocação publicada.
