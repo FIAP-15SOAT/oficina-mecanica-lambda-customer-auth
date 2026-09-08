@@ -124,7 +124,16 @@ describe('describeError', () => {
 
     const stacktrace = describeError(error)['exception.stacktrace'] ?? '';
 
-    expect(stacktrace.split('Caused by:')).toHaveLength(4);
+    /**
+     * O limite é afirmado pelos dois lados, e sem depender do comprimento do
+     * stack: o topo da cadeia entra, o quinto elo nunca entra, e o número de
+     * elos não passa do teto. Afirmar uma contagem exata acoplaria o teste ao
+     * truncamento de 8192 caracteres, que varia com o tamanho do caminho
+     * absoluto do projeto — passa no Windows e reprova no runner Linux.
+     */
+    expect(stacktrace).toContain('nível 10');
+    expect(stacktrace).not.toContain('nível 6');
+    expect(stacktrace.split('Caused by:').length).toBeLessThanOrEqual(4);
   });
 
   it('should stop the chain at a cause that is not an error', () => {
