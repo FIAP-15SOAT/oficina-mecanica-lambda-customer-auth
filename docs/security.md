@@ -18,7 +18,8 @@ credencial de cliente trafega.
 | Confusão de algoritmo no token | Verificação na API | `RS256` assimétrico, verificado por estratégia separada da interna; o token externo nunca alcança o verificador HMAC |
 | Escalonamento por claim forjada | Conteúdo do token | O token carrega apenas `sub`; papel e escopo nunca vêm dele |
 | Corpo hostil como negação de serviço | Corpo da requisição | Limite de 4096 bytes antes de qualquer desserialização |
-| Perda de conexões do banco | Concorrência | Pool de tamanho um por ambiente; concorrência reservada como pré-requisito de infraestrutura |
+| Perda de conexões do banco | Concorrência | Pool de tamanho um por ambiente **e concorrência reservada em 10** na configuração da função — menos de um décimo do orçamento da instância |
+| Análise dinâmica ausente | Superfície pública | A função não expõe superfície HTTP própria; a decisão e o que cobre a superfície no lugar estão no [ADR 0006](adr/0006-sem-analise-dinamica.md) |
 
 ## Anti-enumeração
 
@@ -84,10 +85,36 @@ composição.
 **Nenhum par de chaves é versionado neste repositório.** O emissor e a suíte de
 ponta a ponta geram um par RSA **em tempo de teste** e verificam com a chave
 pública correspondente, o que remove custódia de material sensível do
-repositório. O par gerado durante a entrega da API passou por máquina de
-desenvolvimento e ficou sem custódia formal: é **chave de teste**, e nunca deve
-ser promovido a produção. Um par novo deve ser gerado **diretamente no
-gerenciador de segredos** no momento da publicação.
+repositório. A regra de exclusão do controle de versão cobre `*.pem` nas duas
+metades, e o repositório é público — o que torna a regra uma fronteira, não uma
+conveniência.
+
+### A cadeia de custódia da metade privada
+
+| Etapa | Onde | Quem lê |
+| --- | --- | --- |
+| 1 | Cofre de segredos do **environment** `production` | Apenas um job que declara aquele environment e satisfaz as suas regras |
+| 2 | Variável mascarada da execução da entrega | O job, durante a execução |
+| 3 | Gerenciador de segredos da nuvem, cifrado pela chave gerenciada padrão | A role de execução da função |
+| 4 | Memória do ambiente de execução, importada na partida a frio | A função |
+
+O cofre do provedor **não faz parte do repositório**: a regra de exclusão do
+controle de versão é irrelevante para ele. O material é carregado uma única vez,
+a partir do arquivo local.
+
+O segredo vive no **environment**, e não no cofre do repositório. A distinção é a
+fronteira: segredo de repositório é legível por **qualquer** workflow, inclusive
+os disparados por `push` em branch de trabalho — o que, num repositório público,
+significa legível por quem tiver permissão de escrita.
+
+**O valor nunca transita pelo state da infraestrutura.** A stack declara o
+contêiner do segredo e não o seu valor; a entrega grava o valor de forma
+idempotente. Declará-lo na infraestrutura o colocaria em texto puro num bucket
+compartilhado por cinco stacks.
+
+A metade pública correspondente vive no repositório da API, que a usa para
+verificar o token. As duas metades são do mesmo par, gerado uma única vez fora
+de qualquer repositório.
 
 Nenhum segredo real é versionado em nenhum arquivo: `app/.env.example` contém
 apenas valores de exemplo, e `.env` é ignorado pelo controle de versão.
@@ -135,9 +162,12 @@ autenticação externa e é herdado aqui.
 
 Mitigá-lo de verdade exigiria estado compartilhado entre invocações — a função é
 sem estado por construção —, ou seja, um contador externo ou uma regra no
-firewall de aplicação. Qualquer uma das duas é decisão da change de
-infraestrutura, e esta seção existe para que a limitação do gateway não seja
-lida como se já a resolvesse.
+firewall de aplicação. Nenhuma das duas existe, e esta seção existe para que a
+limitação do gateway não seja lida como se já a resolvesse.
+
+**A concorrência reservada não é anti-força-bruta.** Ela protege o orçamento de
+conexões do banco compartilhado, que é a linha correspondente da tabela de
+ameaças — não esta.
 
 ## Superfície de dependências
 
@@ -148,4 +178,42 @@ numa função de segurança sujeita a varredura, é redução mensurável de
 superfície.
 
 Nenhuma biblioteca de fornecedor de observabilidade está presente: a saída é
-stdout, e a coleta é responsabilidade da infraestrutura.
+stdout, e a coleta é responsabilidade da infraestrutura — uma camada anexada à
+função, configurada por variáveis de ambiente, sem uma linha em `src/`. Ver
+[ADR 0005](adr/0005-coleta-de-telemetria-sem-instrumentacao.md).
+
+O cliente do gerenciador de segredos é a sexta dependência de runtime, embutida
+no pacote em vez de consumida do ambiente de execução — a razão está no
+[ADR 0004](adr/0004-empacotamento-e-publicacao.md). Ela é fixada pelo arquivo de
+bloqueio como todas as outras, e por isso **entra na varredura**, o que a versão
+fornecida pelo ambiente não fazia.
+
+## A credencial do destino de telemetria é legível na configuração
+
+Ela vai como variável de ambiente da função, e portanto é legível por quem puder
+ler a configuração da função.
+
+É paridade deliberada com a API, onde a mesma credencial é um Secret do cluster —
+codificado, legível por quem tiver permissão de leitura no espaço de nomes. Numa
+conta de laboratório com role ampla, a diferença é nominal.
+
+**O fornecedor recomenda outra coisa:** guardá-la no gerenciador de segredos e
+referenciá-la por identificador. Isso acrescentaria um recurso e uma leitura por
+partida a frio para uma diferença que este ambiente não realiza. Registrado aqui
+para que a divergência da recomendação seja escolha, e não descuido.
+
+## Repositório público
+
+O repositório é público, e três consequências são assumidas explicitamente:
+
+1. **Nenhum material sensível é versionado.** Chaves, `.env` e `terraform.tfvars`
+   estão fora do controle de versão, e nenhum valor de segredo aparece no código
+   de infraestrutura ou no state.
+2. **A prévia de infraestrutura na validação usa credencial da nuvem** num
+   workflow disparado por `push` em branch de trabalho, e a sua saída vai para um
+   log público. Aceito, com os atenuantes registrados em
+   [CI/CD › Exposição aceita conscientemente](ci-cd.md#exposicao-aceita-conscientemente).
+   O que um workflow de branch alcança é a credencial do laboratório, e **nada**
+   do material próprio desta função.
+3. **Pedido de merge vindo de bifurcação não recebe segredo**, por política do
+   provedor.

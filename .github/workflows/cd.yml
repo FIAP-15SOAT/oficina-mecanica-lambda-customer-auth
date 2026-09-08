@@ -1,0 +1,230 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  TF_IN_AUTOMATION: "true"
+  # CPF estruturalmente válido e inexistente: a recusa de credencial é a
+  # resposta que prova a cadeia inteira sem depender de dado real.
+  SYNTHETIC_CPF: "123.456.789-09"
+  SYNTHETIC_PASSWORD: "SenhaSinteticaDeVerificacao"
+
+jobs:
+  deploy:
+    name: Deploy Lambda
+    runs-on: ubuntu-latest
+    environment: production
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (vars.ENABLE_DEPLOY == 'true' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Validate required secrets
+        env:
+          CUSTOMER_JWT_PRIVATE_KEY: ${{ secrets.CUSTOMER_JWT_PRIVATE_KEY }}
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          ENABLE_TELEMETRY_COLLECTION: ${{ vars.ENABLE_TELEMETRY_COLLECTION }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CUSTOMER_JWT_PRIVATE_KEY}" ]; then
+            echo "::error::CUSTOMER_JWT_PRIVATE_KEY não está configurado nos segredos do environment production."
+            exit 1
+          fi
+
+          printf '%s' "${CUSTOMER_JWT_PRIVATE_KEY}" > /tmp/customer-auth-private.pem
+          if ! openssl pkey -in /tmp/customer-auth-private.pem -noout >/dev/null 2>&1; then
+            echo "::error::CUSTOMER_JWT_PRIVATE_KEY não tem forma de chave privada PEM legível."
+            exit 1
+          fi
+
+          # A coleta é opcional, mas ligá-la sem credencial produziria uma
+          # camada anexada que não entrega nada.
+          if [ "${ENABLE_TELEMETRY_COLLECTION}" = "true" ] && [ -z "${DD_API_KEY}" ]; then
+            echo "::error::DD_API_KEY não está configurado nos segredos do environment production, mas ENABLE_TELEMETRY_COLLECTION está ligada."
+            exit 1
+          fi
+
+          echo "Segredos exigidos presentes e bem formados."
+
+      - uses: ./.github/actions/setup-ci
+
+      - name: Build
+        working-directory: app
+        run: npm run build
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        run: terraform init -no-color
+        working-directory: terraform
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+        working-directory: terraform
+
+      - name: Terraform Plan
+        working-directory: terraform
+        env:
+          TF_VAR_service_version: ${{ github.sha }}
+          TF_VAR_enable_telemetry_collection: ${{ vars.ENABLE_TELEMETRY_COLLECTION == 'true' }}
+          TF_VAR_telemetry_api_key: ${{ secrets.DD_API_KEY }}
+        run: terraform plan -no-color
+
+      - name: Terraform Apply
+        working-directory: terraform
+        env:
+          TF_VAR_service_version: ${{ github.sha }}
+          TF_VAR_enable_telemetry_collection: ${{ vars.ENABLE_TELEMETRY_COLLECTION == 'true' }}
+          TF_VAR_telemetry_api_key: ${{ secrets.DD_API_KEY }}
+        run: terraform apply -auto-approve -no-color
+
+      - name: Read stack outputs
+        id: tf
+        working-directory: terraform
+        run: |
+          set -euo pipefail
+          {
+            echo "function_name=$(terraform output -raw function_name)"
+            echo "function_version=$(terraform output -raw function_version)"
+            echo "jwt_private_key_secret_arn=$(terraform output -raw jwt_private_key_secret_arn)"
+            echo "api_endpoint=$(terraform output -raw api_endpoint)"
+          } >> "$GITHUB_OUTPUT"
+
+      # A infraestrutura declara o contêiner do segredo; o **valor** é escrito
+      # aqui, para que o material da chave não transite pelo state.
+      - name: Write the signing key value idempotently
+        env:
+          CUSTOMER_JWT_PRIVATE_KEY: ${{ secrets.CUSTOMER_JWT_PRIVATE_KEY }}
+          SECRET_ARN: ${{ steps.tf.outputs.jwt_private_key_secret_arn }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${CUSTOMER_JWT_PRIVATE_KEY}" > /tmp/customer-auth-private.pem
+          token="$(sha256sum /tmp/customer-auth-private.pem | cut -d' ' -f1)"
+
+          aws secretsmanager put-secret-value \
+            --secret-id "${SECRET_ARN}" \
+            --secret-string "file:///tmp/customer-auth-private.pem" \
+            --client-request-token "${token}" \
+            --output json > /tmp/put-secret-value.json
+
+          rm -f /tmp/customer-auth-private.pem
+          echo "Versão corrente do segredo: $(jq -r '.VersionId' /tmp/put-secret-value.json)"
+
+      # Primeiro portão: a invocação direta prova, em cadeia, que o pacote
+      # carrega, a configuração é válida, os dois segredos foram lidos, a chave
+      # importou e a interface de rede alcança o banco.
+      #
+      # A discriminação vem do tradutor de respostas: 401 = banco alcançado sem
+      # correspondência; 503 = banco inalcançável; 500 = configuração ou
+      # assinatura; ausência de resposta = pacote ou rede.
+      - name: Post-deploy gate — real invocation
+        env:
+          FUNCTION_NAME: ${{ steps.tf.outputs.function_name }}
+        run: |
+          set -euo pipefail
+
+          jq -n \
+            --arg cpf "${SYNTHETIC_CPF}" \
+            --arg password "${SYNTHETIC_PASSWORD}" \
+            '{
+              version: "2.0",
+              routeKey: "POST /customer-auth/login",
+              rawPath: "/customer-auth/login",
+              rawQueryString: "",
+              headers: { "content-type": "application/json", "x-request-id": "post-deploy-gate" },
+              requestContext: {
+                http: { method: "POST", path: "/customer-auth/login", protocol: "HTTP/1.1", sourceIp: "127.0.0.1", userAgent: "cd-gate" },
+                requestId: "post-deploy-gate",
+                routeKey: "POST /customer-auth/login",
+                stage: "$default"
+              },
+              body: ({ cpf: $cpf, password: $password } | tostring),
+              isBase64Encoded: false
+            }' > /tmp/gate-event.json
+
+          aws lambda invoke \
+            --function-name "${FUNCTION_NAME}" \
+            --cli-binary-format raw-in-base64-out \
+            --payload "file:///tmp/gate-event.json" \
+            --output json \
+            /tmp/gate-response.json > /tmp/gate-metadata.json
+
+          echo "Metadados da invocação:"; cat /tmp/gate-metadata.json
+          echo "Resposta:"; cat /tmp/gate-response.json
+
+          if jq -e '.FunctionError' /tmp/gate-metadata.json > /dev/null 2>&1; then
+            echo "::error::A invocação não produziu resposta da aplicação — pacote ou rede quebrados."
+            exit 1
+          fi
+
+          status="$(jq -r '.statusCode // empty' /tmp/gate-response.json)"
+          case "${status}" in
+            401) echo "Portão 1 aprovado: a função recusou a credencial." ;;
+            503) echo "::error::A função respondeu indisponibilidade — a interface de rede não alcança o banco."; exit 1 ;;
+            500) echo "::error::A função respondeu erro interno — configuração inválida ou falha de assinatura."; exit 1 ;;
+            "")  echo "::error::A invocação não produziu resposta da aplicação — pacote ou rede quebrados."; exit 1 ;;
+            *)   echo "::error::A função respondeu ${status}, e o portão exige 401."; exit 1 ;;
+          esac
+
+      # Portão final: o único elo que a invocação direta não exercita é a
+      # autorização de invocação concedida ao API Gateway — e é justamente o elo cuja
+      # ausência faz a rota pública responder erro de integração com a função
+      # existindo e saudável.
+      #
+      # A rota não declara autorizador próprio, então uma recusa de credencial
+      # aqui só pode ter vindo da função.
+      - name: Post-deploy gate — public route
+        env:
+          API_ENDPOINT: ${{ steps.tf.outputs.api_endpoint }}
+        run: |
+          set -euo pipefail
+
+          body="$(jq -nc --arg cpf "${SYNTHETIC_CPF}" --arg password "${SYNTHETIC_PASSWORD}" '{ cpf: $cpf, password: $password }')"
+
+          status="$(curl -sS -o /tmp/route-response.json -w '%{http_code}' \
+            -X POST "${API_ENDPOINT}/customer-auth/login" \
+            -H 'content-type: application/json' \
+            -d "${body}")"
+
+          echo "Resposta da rota pública (${status}):"; cat /tmp/route-response.json
+
+          if [ "${status}" != "401" ]; then
+            echo "::error::A rota pública respondeu ${status}, e o portão exige 401. Um erro de integração aqui, com a invocação direta aprovada, aponta a autorização de invocação concedida ao API Gateway."
+            exit 1
+          fi
+
+          echo "Portão 2 aprovado: a rota pública é atendida pela função."
+
+      - name: Record the deployment in the job summary
+        if: always()
+        run: |
+          {
+            echo '### Entrega'
+            echo ''
+            echo "- Função: \`${{ steps.tf.outputs.function_name }}\`"
+            echo "- Versão publicada: \`${{ steps.tf.outputs.function_version }}\`"
+            echo "- Commit implantado: \`${{ github.sha }}\`"
+            echo "- Coleta de telemetria: \`${{ vars.ENABLE_TELEMETRY_COLLECTION == 'true' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

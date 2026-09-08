@@ -60,8 +60,9 @@ fidelidade — ele roda o ponto de entrada no interpretador local, exatamente co
 o comando acima — e cobra um descritor. Emulação completa de serviços de nuvem
 faria sentido com várias integrações; aqui há uma, resolvida por variável de
 ambiente em desenvolvimento. Um contêiner com o emulador de runtime compra
-fidelidade real, mas o que ele provaria — que o `.zip` sobe e responde — é
-verificação de esteira, e pertence à change de infraestrutura. Rejeitadas.
+fidelidade real, mas o que ele provaria — que o `.zip` sobe e responde — é o
+que a verificação por invocação real da entrega prova contra a função publicada,
+com fidelidade total. Rejeitadas.
 
 ## Alternativas consideradas
 

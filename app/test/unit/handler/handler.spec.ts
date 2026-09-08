@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 
-import { getBaseLogger, getDependencies } from '../../../src/bootstrap';
+import { discardComposition, getBaseLogger, getDependencies } from '../../../src/bootstrap';
 import { handler, warmUp } from '../../../src/handler';
 import { DatabaseOperationException } from '@infrastructure/exceptions/database-operation.exception';
 import { TokenSigningException } from '@infrastructure/exceptions/token-signing.exception';
@@ -17,10 +17,12 @@ import { buildContext, buildEvent, buildJsonEvent } from '../../helpers/platform
 jest.mock('../../../src/bootstrap', () => ({
   getDependencies: jest.fn(),
   getBaseLogger: jest.fn(),
+  discardComposition: jest.fn(),
 }));
 
 const dependenciesMock = getDependencies as jest.MockedFunction<typeof getDependencies>;
 const baseLoggerMock = getBaseLogger as jest.MockedFunction<typeof getBaseLogger>;
+const discardCompositionMock = discardComposition as jest.MockedFunction<typeof discardComposition>;
 const CREDENTIAL = { cpf: FORMATTED_CPF, password: 'Senha@123' };
 
 function bodyOf(response: { body?: string }) {
@@ -78,6 +80,8 @@ describe('handler', () => {
 
   beforeEach(() => {
     mocks = createMockDependencies();
+    dependenciesMock.mockReset();
+    discardCompositionMock.mockReset();
     dependenciesMock.mockResolvedValue(mocks.dependencies);
     baseLoggerMock.mockReturnValue(mocks.capture.adapter);
   });
@@ -175,6 +179,58 @@ describe('handler', () => {
       );
 
       expect((await handler(buildJsonEvent(CREDENTIAL), buildContext())).statusCode).toBe(503);
+      expect(discardCompositionMock).not.toHaveBeenCalled();
+    });
+
+    it('should discard the memoized composition when the database refuses authentication', async () => {
+      mocks.identityRepository.findByCpf.mockRejectedValue(
+        new DatabaseOperationException('busca', {
+          cause: Object.assign(new Error('password authentication failed'), { code: '28P01' }),
+        }),
+      );
+
+      const response = await handler(buildJsonEvent(CREDENTIAL), buildContext());
+
+      expect(discardCompositionMock).toHaveBeenCalledTimes(1);
+
+      // A resposta ao chamador não muda: a causa não vaza.
+      expect(response.statusCode).toBe(503);
+      expect(bodyOf(response)).toEqual({
+        statusCode: 503,
+        error: 'Service Unavailable',
+        message: 'Serviço temporariamente indisponível',
+      });
+    });
+
+    it('should re-read the credential on the invocation after an authentication refusal', async () => {
+      mocks.identityRepository.findByCpf.mockRejectedValueOnce(
+        new DatabaseOperationException('busca', {
+          cause: Object.assign(new Error('password authentication failed'), { code: '28P01' }),
+        }),
+      );
+
+      await handler(buildJsonEvent(CREDENTIAL), buildContext());
+
+      expect(discardCompositionMock).toHaveBeenCalledTimes(1);
+      mocks.identityRepository.findByCpf.mockResolvedValue(null);
+
+      const second = await handler(buildJsonEvent(CREDENTIAL), buildContext());
+
+      expect(dependenciesMock).toHaveBeenCalledTimes(2);
+      expect(second.statusCode).toBe(401);
+    });
+
+    /**
+     * Uma falha de composição não pode disparar o descarte: nada foi memoizado,
+     * e a causa não é a credencial do banco.
+     */
+    it('should not discard the composition when the failure happened before composing', async () => {
+      dependenciesMock.mockRejectedValueOnce(
+        Object.assign(new Error('password authentication failed'), { code: '28P01' }),
+      );
+
+      expect((await handler(buildJsonEvent(CREDENTIAL), buildContext())).statusCode).toBe(500);
+      expect(discardCompositionMock).not.toHaveBeenCalled();
     });
 
     it('should answer 500 when the token cannot be signed', async () => {

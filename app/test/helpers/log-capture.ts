@@ -6,7 +6,7 @@ import { LogLevel, ResourceAttributes } from '@infrastructure/logging/logger.con
 import { PinoLoggerAdapter } from '@infrastructure/logging/pino-logger.adapter';
 
 export const TEST_RESOURCE: ResourceAttributes = {
-  'service.name': 'oficina-mecanica-customer-auth',
+  'service.name': 'oficina-mecanica-lambda-customer-auth',
   'service.namespace': 'oficina-mecanica',
   'service.version': 'test',
   'deployment.environment.name': 'test',

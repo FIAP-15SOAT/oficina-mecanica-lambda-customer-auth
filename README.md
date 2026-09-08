@@ -11,6 +11,10 @@ credencial, decide, e emite o token que a API principal já sabe verificar.
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![Cobertura](https://img.shields.io/badge/cobertura-100%25-brightgreen)
 
+[![CI](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/actions/workflows/ci.yml)
+[![SAST](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/actions/workflows/sast.yml/badge.svg)](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/actions/workflows/sast.yml)
+[![CD](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/actions/workflows/cd.yml/badge.svg)](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/actions/workflows/cd.yml)
+
 </div>
 
 ## 📋 Sobre
@@ -115,43 +119,53 @@ Todos rodam a partir de `app/`.
 | --- | --- |
 | 📄 [Contrato](docs/contracts.md) | **Normativo e autocontido**: rota, corpo, envelope de sucesso, tabela de erros, claims, algoritmo, validade e identificador de chave |
 | 🏛️ [Arquitetura](docs/architecture.md) | Camadas, portas, composição memoizada, fluxo de invocação, árvore de diretórios e as divergências em relação à API |
-| 🗄️ [Banco de dados](docs/database.md) | A consulta, ciclo de vida da conexão, limites de tempo, TLS, e as dívidas de privilégio e de intermediador |
+| 🗄️ [Banco de dados](docs/database.md) | A consulta, ciclo de vida da conexão, limites de tempo, TLS, caminho de rede e orçamento de conexões |
 | 🔒 [Segurança](docs/security.md) | Modelo de ameaças, anti-enumeração, anti-temporização, custódia da chave, e o que a limitação do gateway **não** protege |
 | 📊 [Logging](docs/logging.md) | Envelope, dicionário completo, eventos, níveis e a tabela de divergências |
 | 💻 [Como executar localmente](docs/local-setup.md) | A invocação avulsa, o banco pela imagem da API, e a convivência com o ambiente local dela |
 | 🧪 [Testes](docs/testing.md) | Os dois níveis, propriedades travadas por teste e cobertura |
+| 🔁 [CI/CD](docs/ci-cd.md) | Os três workflows, cada job e o que o reprova, os dois portões pós-implantação, o inventário de configuração externa e o guia de solução de problemas |
+| ☁️ [Infraestrutura](docs/terraform.md) | O que a stack provisiona, a fronteira entre repositórios, o consumo de state remoto e o contrato de output da credencial do banco |
+| 🔭 [Observabilidade](docs/observability.md) | Os sinais que a função produz, a camada que os coleta, os dois eixos de correlação e o que não é instrumentado |
 | 📐 [ADR 0001](docs/adr/0001-driver-em-vez-de-orm.md) | Driver em vez de ORM |
 | 📐 [ADR 0002](docs/adr/0002-camadas-enxutas-com-composicao-memoizada.md) | Camadas enxutas com composição memoizada |
 | 📐 [ADR 0003](docs/adr/0003-bcrypt-em-javascript-puro.md) | bcrypt em JavaScript puro, artefato compactado e execução local |
+| 📐 [ADR 0004](docs/adr/0004-empacotamento-e-publicacao.md) | Empacotamento e publicação da função |
+| 📐 [ADR 0005](docs/adr/0005-coleta-de-telemetria-sem-instrumentacao.md) | Coleta de telemetria sem instrumentação no código |
+| 📐 [ADR 0006](docs/adr/0006-sem-analise-dinamica.md) | Sem análise dinâmica de segurança neste repositório |
 
 ## 🧩 Ecossistema
 
 | Repositório | Papel | Relação com esta função |
 | --- | --- | --- |
 | `oficina-mecanica-app` | API principal (NestJS) | **Dona do schema** e da identidade. Verifica o token emitido aqui, com uma estratégia separada da interna. Sua imagem é usada como migrador do banco local e de teste |
-| `oficina-mecanica-gateway` | API Gateway | Publicará a rota e consumirá [`docs/contracts.md`](docs/contracts.md) |
-| **`oficina-mecanica-lambda-customer-auth`** | **Esta função** | Emite o token externo |
+| `oficina-mecanica-infra-base` | Rede | Dona da VPC e das subnets privadas às quais esta função é anexada |
+| `oficina-mecanica-database` | Banco | Dono da instância e da credencial. Expõe endereço, porta, nome e o identificador do segredo por output |
+| `oficina-mecanica-gateway` | API Gateway | Publica `POST /customer-auth/login` e consome [`docs/contracts.md`](docs/contracts.md). Esta stack concede a autorização de invocação |
+| `oficina-mecanica-k8s` | Cluster | Executa a API principal. Não participa desta função |
+| **`oficina-mecanica-lambda-customer-auth`** | **Esta função** | Emite o token externo, e é dona da própria stack de infraestrutura |
 
 O modelo de identidade — `users.cpf`, `user_customers`, `customers.is_active` —
 é definido e mantido pela API. O racional está no ADR de autenticação de clientes
 daquele repositório (`docs/adr/0004-autenticacao-de-clientes.md`). Este
 repositório **lê** esse modelo e não contém DDL algum.
 
-## 🚧 Estado
+## 📦 Estado
 
-- A função está implementada e coberta por testes unitários (100% nas quatro
-  métricas) e de ponta a ponta.
-- A suíte de **ponta a ponta** depende da change da API que introduz
-  `users.cpf`, `customers.is_active` e `user_customers`. Ela vive na branch
-  `feature/login-cpf` (PR 65) e ainda não foi integrada: até lá, a imagem
-  migradora precisa ser produzida a partir dessa branch. Contra qualquer schema
-  anterior a suíte falha — por projeto: é exatamente o sinal que ela existe para
-  dar.
-- A **interoperabilidade** com a API foi verificada de ponta a ponta contra essa
-  branch: o token emitido aqui é aceito pela estratégia `customer-jwt` dela.
-  Passo a passo em [Como executar localmente](docs/local-setup.md#os-dois-repositórios-juntos).
-- Infraestrutura, exposição pública e esteira ficam para changes próprias.
-  `infra/` está reservado. Até lá, **nenhum token externo real é emitido**.
+- A função é implementada em camadas enxutas, coberta por suíte unitária com
+  **100% nas quatro métricas** e por suíte de ponta a ponta contra o schema real
+  mantido pela API.
+- A esteira valida toda mudança em seis verificações paralelas, a análise
+  estática impõe o seu portão de qualidade, e a entrega provisiona a função e a
+  publica — terminando em **dois portões**: a invocação real e a chamada à rota
+  pública, ambas exigindo recusa de credencial.
+- A infraestrutura vive em [`terraform/`](terraform/): a função em subnets
+  privadas, o seu grupo de segurança, o grupo de log, o segredo da chave de
+  assinatura, a concorrência reservada e a autorização de invocação concedida à
+  API Gateway.
+- `POST /customer-auth/login` é atendida pela função, e o token emitido aqui é
+  aceito pela estratégia `customer-jwt` da API. Passo a passo em
+  [Como executar localmente](docs/local-setup.md#os-dois-repositórios-juntos).
 
 ## 👥 Autores
 

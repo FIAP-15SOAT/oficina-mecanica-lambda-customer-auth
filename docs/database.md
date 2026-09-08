@@ -15,13 +15,6 @@ de ponta a ponta —, ele é obtido **executando as migrations da API**, pela
 imagem dela. Rodar contra uma definição criada aqui provaria apenas
 que a função concorda consigo mesma, que é justamente o defeito a detectar.
 
-> **Dependência de entrega.** A consulta abaixo lê `users.cpf`,
-> `customers.is_active` e a tabela `user_customers`, introduzidas pela change da
-> API que cria a identidade externa. Ela vive na branch `feature/login-cpf`
-> (PR 65) e ainda não foi integrada: enquanto isso, a imagem migradora precisa
-> vir dessa branch. Contra qualquer schema anterior, a suíte de ponta a ponta
-> desta função falha — por projeto: é exatamente o sinal que ela existe para dar.
-
 ## A consulta
 
 Uma tentativa de autenticação faz **exatamente uma** ida ao banco.
@@ -134,7 +127,7 @@ percorre todas as configurações possíveis afirmando isso.
 `DATABASE_SSL_CA`, quando presente, fixa a autoridade certificadora esperada.
 Ausente, valem as autoridades públicas que o Node carrega por padrão.
 
-### A cadeia do RDS precisa ser fornecida — requisito da change de infraestrutura
+### A cadeia do RDS, fornecida por `NODE_EXTRA_CA_CERTS`
 
 O certificado servido pelo RDS é emitido por uma autoridade **privada da
 Amazon**, que não está entre as autoridades públicas padrão do Node. Como o
@@ -143,18 +136,29 @@ forneça essa cadeia **não conecta** — falha fechada, que é o comportamento 
 do ponto de vista de segurança e indisponibilidade total do ponto de vista
 operacional.
 
-Fornecer a cadeia é obrigatório e a change de infraestrutura MUST escolher e
-exercitar **um** destes mecanismos:
+**O mecanismo é `NODE_EXTRA_CA_CERTS`**, apontando para o pacote de autoridades
+que a própria imagem do ambiente de execução já carrega. Uma variável de algumas
+dezenas de bytes, sem arquivo para versionar nem rotacionar.
 
-| Mecanismo | Como |
+A alternativa — entregar o pacote regional na variável `DATABASE_SSL_CA` — está
+descartada por **limite da plataforma**: o conjunto de variáveis de ambiente da
+função é limitado a 4 KB agregados, e o pacote regional tem dezenas de KB.
+
+| Mecanismo | Onde vale |
 | --- | --- |
-| Variável de ambiente (preferido) | `NODE_EXTRA_CA_CERTS=/var/runtime/ca-cert.pem`, usando o pacote que a própria imagem do runtime já traz — nenhum arquivo para versionar ou rotacionar |
-| CA explícita | Baixar o pacote regional de `https://truststore.pki.rds.amazonaws.com/<região>/<região>-bundle.pem` e entregá-lo em `DATABASE_SSL_CA` |
+| `NODE_EXTRA_CA_CERTS`, para o pacote da imagem do runtime | A implantação |
+| `DATABASE_SSL_CA` com o pacote regional | Desenvolvimento local, quando a cadeia precisa ser fixada explicitamente |
 
-`DATABASE_SSL_CA` continua opcional **no esquema** porque o primeiro mecanismo
-dispensa a variável. O que não é opcional é a decisão: sem um dos dois, a função
-sobe e falha na primeira consulta. Um teste de conexão com TLS real contra o
-endpoint publicado é o que fecha esse item.
+A escolha **não exige mudança no código**: o construtor de configuração de
+transporte omite a autoridade quando `DATABASE_SSL_CA` está ausente, deixando a
+verificação ativa contra o armazém de confiança padrão — que é exatamente o que
+`NODE_EXTRA_CA_CERTS` estende.
+
+**O teste de conexão com TLS real contra o endpoint publicado é a verificação
+por invocação real da entrega**: ela invoca a função publicada com um evento
+sintético e exige recusa de credencial, o que só acontece se a consulta ao banco
+tiver ido e voltado. Uma cadeia não fornecida produziria indisponibilidade, e a
+entrega reprovaria.
 
 `DATABASE_SSL=false` **desliga o TLS por completo** e é aceito **apenas fora de
 produção**: o esquema de configuração recusa a combinação com
@@ -163,20 +167,44 @@ ambiente local da API não expõe TLS, e este repositório não pode exigir
 alteração naquele. Desligar o transporte cifrado localmente é diferente de
 aceitar um certificado não verificado: o segundo nunca acontece.
 
-## Dívidas assumidas
+## O caminho de rede
 
-**Privilégio acima do necessário.** A concessão de menor privilégio depende de
-migration, que pertence à API, e foi adiada. A função conectará com uma role
-existente e mais privilegiada do que precisa. Mitigação: ela é somente leitura
-por construção e executa uma consulta conhecida. A restrição fica registrada
-como dívida, com dono nomeado na change de infraestrutura.
+O banco não é publicamente acessível: `publicly_accessible = false`, subnets
+privadas, ingresso restrito à faixa da rede. A função é anexada às **mesmas
+subnets privadas**, com grupo de segurança próprio, e alcança o banco por uma
+interface de rede criada pela plataforma no momento da partida a frio.
 
-**Sem intermediador de conexões.** Sem um intermediador, o número de conexões
-simultâneas ao banco é o número de ambientes de execução ativos — e esgotar o
-limite do banco **derruba a API junto**. A concorrência reservada passa a ser a
-única proteção, e isso precisa constar do plano da change de infraestrutura, não
-ser descoberto em produção.
+O grupo de segurança da função não declara regra de ingresso — nada conecta nela
+— e libera o egresso, que alcança o gerenciador de segredos pelo gateway de
+tradução de rede já existente nas rotas privadas.
 
-Se aquela change adotar um intermediador com autenticação por identidade da
-nuvem, a função ganha uma dependência para gerar credencial temporária. Isso não
-altera camadas nem specs, mas precisa ser decidido **antes** daquela change.
+A criação da interface é o que torna a partida a frio mais cara aqui do que numa
+função sem rede, e é a razão de a composição ser **antecipada na inicialização
+do ambiente** em vez de esperar a primeira invocação.
+
+## Orçamento de conexões
+
+Cada ambiente de execução mantém **uma** conexão, pelo pool de tamanho um. O
+número de conexões simultâneas ao banco é, portanto, o número de ambientes
+ativos — e esgotar o limite do banco **derruba a API junto**.
+
+A proteção é a **concorrência reservada em 10**, declarada na configuração da
+função. A instância comporta ~110 conexões e a API vai a cinco réplicas com pool
+próprio: esta função usa menos de um décimo do orçamento.
+
+Não há intermediador de conexões. Com a reserva, ele deixa de ser necessário
+para o volume desta função.
+
+> A reserva pode ser recusada pela conta, que exige ao menos cem execuções não
+> reservadas. O caminho de contorno e o seu custo estão em
+> [Infraestrutura](terraform.md#configuracao-da-funcao).
+
+## A credencial pode ser trocada sem derrubar a função
+
+A composição é memoizada pela vida do ambiente de execução, e a credencial é
+lida **uma única vez**, na inicialização. Quando o banco recusa autenticação, a
+composição é **descartada**, e a invocação seguinte relê o segredo.
+
+Sem isso, uma troca de credencial a montante deixaria todo ambiente já aquecido
+inutilizável até ser reciclado pela plataforma. A resposta ao chamador não muda:
+continua `503`, e a causa não vaza.

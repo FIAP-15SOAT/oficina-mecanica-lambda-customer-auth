@@ -11,11 +11,26 @@ dist
 .vscode
 .idea
 
+# Diagram sources: editable files live outside the repository
+docs/diagrams/*.drawio
+
 # Coverage
 coverage
 
 # Packaging artifacts
 *.zip
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+crash.log
+crash.*.log
+terraform/build/
+
+# Sensitive credentials
+terraform.tfvars
 
 # Git worktrees
 .worktrees

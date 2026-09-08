@@ -130,7 +130,7 @@ observabilidade; o componente é quem emite o campo, e portanto onde mexer.
 | --- | --- | --- | --- | --- |
 | `oficina.event.name` | string | baixa | catálogos de evento | clear |
 | `oficina.auth.subject.id` | string | alta | caso de uso | identifier |
-| `oficina.auth.failure.reason` | string | baixa | caso de uso / borda | clear |
+| `oficina.auth.failure.reason` | string | baixa | caso de uso / API Gateway | clear |
 | `oficina.auth.subject.cpf_masked` | string | alta | caso de uso | **pii** |
 
 Em runtime, o que o código precisa é o nome declarado — que decide o descarte em
@@ -148,7 +148,7 @@ um evento adicional.
 | --- | --- | --- | --- |
 | `auth.customer.authentication.succeeded` | info | `subjectId`, `maskedCpf` | caso de uso |
 | `auth.customer.authentication.failed` | warn | `failureReason`, `maskedCpf`, `subjectId?` | caso de uso |
-| `auth.customer.input.rejected` | warn | `failureReason` | caso de uso (CPF) / borda (transporte) |
+| `auth.customer.input.rejected` | warn | `failureReason` | caso de uso (CPF) / API Gateway (transporte) |
 | `db.query.failed` | error | — (`exception.*`) | ponto de entrada |
 | `auth.customer.token.signing.failed` | error | — (`exception.*`) | ponto de entrada |
 | `app.configuration.invalid` | error | — (`exception.*`) | composição |
@@ -237,11 +237,11 @@ O relato identifica a **etapa** e o **campo**, e nunca o valor que causou a
 falha: essa linha não pode virar a via de vazamento que a redação existe para
 evitar.
 
-## Sem identificador de rastro sintético
+## Sem identificador de trace sintético
 
 Enquanto não houver tracing distribuído, nenhuma linha carrega `trace_id` ou
 `span_id`. Um identificador vazio ou inventado faz a plataforma tentar
-correlacionar com um rastro que não existe, o que é pior que a ausência do
+correlacionar com um trace que não existe, o que é pior que a ausência do
 campo. `request.id` é a chave de junção e permanece nomeada; quando ids reais
 existirem, nada precisa ser renomeado.
 

@@ -1,8 +1,8 @@
 # Testes
 
-Dois níveis, cada um com uma fronteira declarada. Não há um terceiro: um nível
-que só prova que a função concorda consigo mesma custa tempo de execução e não
-compra confiança.
+Dois níveis locais, cada um com uma fronteira declarada, e um terceiro que só
+existe depois da implantação. Não há um nível intermediário: um que só prova que
+a função concorda consigo mesma custa tempo de execução e não compra confiança.
 
 ## Unitário — `npm test`
 
@@ -27,13 +27,40 @@ docker compose build migrate      # no repositório da API
 
 O nível roda em processo, e não dentro de um contêiner com o artefato: o que ele
 existe para provar é a correspondência com o schema e o comportamento
-observável, e ambos são visíveis daqui. Que o `.zip` publicado sobe no runtime
-oficial é verificação de esteira, e pertence à change de infraestrutura.
+observável, e ambos são visíveis daqui. Que o pacote publicado sobe no ambiente
+de execução oficial é o que a invocação real prova, mais abaixo.
 
-> **Estado atual:** este nível depende da change da API que introduz `users.cpf`,
-> `customers.is_active` e `user_customers`. Ela existe na branch
-> `feature/login-cpf` (PR 65) e ainda não foi integrada: até lá, a imagem
-> precisa ser produzida a partir dessa branch. Com ela, a suíte passa.
+O schema que este nível exige — `users.cpf`, `customers.is_active` e
+`user_customers` — é mantido pela branch principal da API. Contra qualquer
+schema que não o contenha a suíte falha, por projeto: é exatamente o sinal que
+ela existe para dar.
+
+### Na esteira
+
+O job `E2E Tests` obtém o código da API num **commit fixado** no próprio
+workflow, em `API_MIGRATOR_COMMIT`, e constrói a imagem migradora localmente.
+
+É autocontido: executa ainda que o pipeline daquele repositório nunca tenha
+executado, e não depende de artefato publicado por ele. Atualizar o commit
+fixado é uma mudança revisável neste repositório — e o momento certo para
+revisar a compatibilidade do schema.
+
+## Invocação real — o teste do artefato implantado
+
+Os dois níveis acima exercitam o código. Nenhum deles prova que o **pacote
+publicado** sobe e responde.
+
+Isso é o que os dois portões pós-implantação da entrega fazem, ambos afirmando
+recusa de credencial contra uma credencial estruturalmente válida e inexistente:
+
+| Portão | O que prova |
+| --- | --- |
+| Invocação direta da função publicada | O pacote carrega, a configuração é válida, os dois segredos foram lidos, a chave de assinatura importou e a interface de rede alcança o banco — **inclusive a verificação de TLS contra a cadeia privada do RDS** |
+| Chamada à rota pública | A autorização de invocação concedida ao API Gateway existe e aponta para a API certa |
+
+Qualquer um dos dois reprova a entrega. A discriminação entre `401`, `503`,
+`500` e ausência de resposta vem de graça do tradutor de respostas — ver
+[CI/CD](ci-cd.md#os-dois-portoes-pos-implantacao).
 
 ## Propriedades travadas por teste
 
@@ -55,6 +82,8 @@ bem-intencionada não desfaça uma decisão.
 | `users.password_hash` não é nulo — premissa da uniformidade do `401` | ponta a ponta |
 | Em produção, segredo em variável de ambiente é recusado | `environment.spec.ts` |
 | O bcrypt em JavaScript puro verifica um hash da biblioteca **nativa** da API | `bcrypt-hash.service.spec.ts` |
+| Uma recusa de autenticação do banco descarta a composição memoizada, e a resposta continua `503` | `handler.spec.ts` e `connection.spec.ts` |
+| O ponto de entrada carrega **sem nenhuma dependência instalada**, fora da árvore do repositório | job `Package` |
 
 ## Cobertura
 

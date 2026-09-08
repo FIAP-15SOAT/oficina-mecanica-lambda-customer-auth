@@ -1,8 +1,10 @@
 import { Environment } from '@infrastructure/config/environment';
 import { ConfigurationException } from '@infrastructure/exceptions/configuration.exception';
+import { DatabaseOperationException } from '@infrastructure/exceptions/database-operation.exception';
 import {
   buildPoolConfig,
   createPool,
+  isDatabaseAuthenticationFailure,
   parseDatabaseCredentials,
 } from '@infrastructure/persistence/pg/connection';
 
@@ -125,5 +127,37 @@ describe('createPool', () => {
     expect(() => pool.emit('error', new Error('x'), undefined)).not.toThrow();
 
     return pool.end();
+  });
+});
+
+describe('isDatabaseAuthenticationFailure', () => {
+  function driverError(code: string): Error {
+    return Object.assign(new Error('password authentication failed'), { code });
+  }
+
+  it.each([['28P01'], ['28000']])('should recognise the driver code %s', (code) => {
+    expect(isDatabaseAuthenticationFailure(driverError(code))).toBe(true);
+  });
+
+  it('should recognise it through the cause chain, as it arrives at the handler', () => {
+    const wrapped = new DatabaseOperationException('busca de identidade externa por CPF', {
+      cause: driverError('28P01'),
+    });
+
+    expect(isDatabaseAuthenticationFailure(wrapped)).toBe(true);
+  });
+
+  it.each([
+    ['another driver code', driverError('57P01')],
+    ['a non-string code', Object.assign(new Error('x'), { code: 28001 })],
+    ['an error with no code', new Error('connection terminated')],
+    [
+      'a wrapped error with no authentication cause',
+      new DatabaseOperationException('busca', { cause: new Error('timeout') }),
+    ],
+    ['something that is not an error', 'password authentication failed'],
+    ['nothing at all', undefined],
+  ])('should not recognise %s', (_case, error) => {
+    expect(isDatabaseAuthenticationFailure(error)).toBe(false);
   });
 });

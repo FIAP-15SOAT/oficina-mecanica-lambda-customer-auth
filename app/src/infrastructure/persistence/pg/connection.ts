@@ -71,6 +71,20 @@ function buildSslConfig(env: Environment): PoolConfig['ssl'] {
   };
 }
 
+const AUTHENTICATION_FAILURE_CODES: ReadonlySet<string> = new Set(['28P01', '28000']);
+
+export function isDatabaseAuthenticationFailure(error: unknown): boolean {
+  for (let current = error; current instanceof Error; current = current.cause) {
+    const code = (current as { code?: unknown }).code;
+
+    if (typeof code === 'string' && AUTHENTICATION_FAILURE_CODES.has(code)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function createPool(
   env: Environment,
   credentials: DatabaseCredentials,

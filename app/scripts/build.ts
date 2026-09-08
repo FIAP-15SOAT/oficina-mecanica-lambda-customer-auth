@@ -4,8 +4,6 @@ import { readFile, rm } from 'node:fs/promises';
 const ALIASES = ['@domain/', '@application/', '@infrastructure/', '@interface-adapters/'];
 
 /**
- * `@aws-sdk/*` fica externo porque o runtime já o fornece — embuti-lo
- * multiplicaria o tamanho do pacote por uma única chamada.
  * `pg-native` fica *externo* por necessidade: o driver o referencia atrás de
  * um getter opcional que esta função nunca toca, e sem marcá-lo o esbuild
  * falha ao resolver.
@@ -24,7 +22,7 @@ async function buildArtifact(): Promise<void> {
     sourcesContent: false,
     treeShaking: true,
     legalComments: 'none',
-    external: ['@aws-sdk/*', 'pg-native'],
+    external: ['pg-native'],
     tsconfig: 'tsconfig.json',
     logLevel: 'info',
   });

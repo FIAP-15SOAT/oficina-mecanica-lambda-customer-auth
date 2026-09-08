@@ -36,7 +36,7 @@ As dependências de código-fonte apontam **somente para dentro**.
 
 ### Um anel de adaptadores, não dois
 
-A API principal mantém dois anéis — um livre de framework e outro que é a borda
+A API principal mantém dois anéis — um livre de framework e outro que é o API Gateway
 do framework. O segundo existe **porque o framework exige**. Aqui não há
 framework: um anel cumpre o papel, e a tradução do formato de evento e de
 resposta fica confinada a `infrastructure/serverless/`.
@@ -46,7 +46,7 @@ resposta fica confinada a `infrastructure/serverless/`.
 `eslint.config.mjs` proíbe `domain/` e `application/` de importarem
 `aws-lambda`, `pg`, `jose`, `bcryptjs`, `pino`, `@aws-sdk/*` e módulos de
 `@infrastructure`/`@interface-adapters`. Uma segunda regra permite `aws-lambda`
-apenas em `src/infrastructure/serverless/` e em `src/handler.ts`, que é a borda
+apenas em `src/infrastructure/serverless/` e em `src/handler.ts`, que é o API Gateway
 da plataforma por definição. Violação **falha** a verificação — não emite aviso.
 
 Trocar a versão da carga de evento do gateway alcança o validador de evento e o
@@ -147,7 +147,7 @@ evento do gateway
 
 **No máximo duas linhas por invocação:** a do atendimento, sempre, e no máximo
 um evento adicional. Quem conhece a causa é quem a registra — o caso de uso
-registra o que julga, a borda registra o que recusa antes de o caso de uso
+registra o que julga, o API Gateway registra o que recusa antes de o caso de uso
 existir, e o ponto de entrada registra as duas falhas de mecanismo. Não há
 caminho em que dois eventos sejam emitidos.
 
@@ -191,7 +191,8 @@ falha de formas visíveis ao cliente.
 │   ├── events/                    evento versionado para invocação avulsa
 │   └── package.json  tsconfig.json  jest*.config.ts  eslint.config.mjs  sonar-project.properties
 ├── docs/                    esta documentação e os ADRs
-└── infra/                   reservado — será preenchido por change própria
+├── terraform/               a stack da função: rede, log, segredo, autorização
+└── .github/                 workflows de validação, análise estática e entrega
 ```
 
 A raiz **não** contém manifesto de dependência nem configuração de compilação,
@@ -212,6 +213,45 @@ invocação publicada.
 O Jest resolve módulos antes de o TypeScript participar, então precisa do mapa
 equivalente. Ele é declarado uma vez em `jest.config.ts` e **importado** por
 `jest.e2e.config.ts`, em vez de copiado.
+
+## A forma implantada
+
+O desenho acima descreve o código. Esta seção descreve onde ele executa.
+
+![Diagrama de arquitetura: o cliente chama por HTTPS o API Gateway, que publica
+POST /customer-auth/login e invoca a função Lambda; a função executa nas duas
+subnets privadas da VPC 10.0.0.0/16, com security group próprio e interface de
+rede criada na partida a frio, alcança o Amazon RDS PostgreSQL 16 na porta 5432
+e o Secrets Manager pelo NAT Gateway, e emite log para o CloudWatch Logs com
+retenção de 14 dias](diagrams/infrastructure.png)
+
+**Rede.** A função é anexada às subnets privadas da rede da solução, com grupo de
+segurança próprio, porque o banco não é publicamente acessível e aceita apenas
+origens da faixa da rede. O grupo não declara ingresso — nada conecta na função,
+que é invocada por chamada de serviço — e libera o egresso.
+
+**Interface anexada.** Estar na rede significa que a plataforma cria uma
+interface de rede para o ambiente de execução. É o item mais caro da partida a
+frio, e o que torna o reaproveitamento do ambiente valioso.
+
+**Partida a frio e antecipação da composição.** O ponto de entrada dispara a
+composição durante a **inicialização do ambiente**, não na primeira invocação:
+sem isso, a primeira credencial real pagaria a interface de rede, a leitura dos
+dois segredos e a importação do PEM.
+
+O handshake do banco fica deliberadamente de fora dessa antecipação: o pool é
+preguiçoso e só conecta na primeira consulta. Abrir a conexão na composição faria
+um banco indisponível derrubar a inicialização inteira, trocando o `503` correto
+por um `500`.
+
+**Concorrência.** A concorrência reservada limita quantos ambientes existem ao
+mesmo tempo, e portanto quantas conexões a função mantém contra o banco
+compartilhado — ver [Banco de dados](database.md#orcamento-de-conexoes).
+
+**Uma versão imutável por implantação**, sem apelido: o API Gateway constrói o endereço
+de invocação sem qualificador. Detalhes em
+[ADR 0004](adr/0004-empacotamento-e-publicacao.md) e
+[Infraestrutura](terraform.md).
 
 ## Divergências deliberadas em relação à API
 
