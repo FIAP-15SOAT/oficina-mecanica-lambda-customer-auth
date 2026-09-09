@@ -221,6 +221,7 @@ environment e satisfaz as suas regras.
 | `AWS_SESSION_TOKEN` | Segredo | CI, CD | Autenticação na nuvem. **A omissão produz falha de token inválido em toda chamada** | CD: sim · CI: não |
 | `BOT_APP_ID` | Variável | CI | Identidade da aplicação que abre o Pull Request | Sim |
 | `BOT_PRIVATE_KEY` | Segredo | CI | Credencial da mesma aplicação | Sim |
+| `DD_API_KEY` | Segredo | CD | Credencial do destino de telemetria. É a **mesma** que a API usa — por isso vive na organização, e não neste repositório | Somente quando a coleta está ligada |
 
 As três credenciais da nuvem expiram a cada reinício do laboratório e precisam
 ser renovadas **juntas**.
@@ -230,18 +231,23 @@ ser renovadas **juntas**.
 | Nome | Tipo | Workflow | Finalidade | Obrigatório |
 | --- | --- | --- | --- | --- |
 | `SONAR_TOKEN` | Segredo | SAST | Autenticação no serviço de análise estática | Sim |
-| `ENABLE_DEPLOY` | Variável | CD | Interruptor de entrega. Ausente ou diferente de `true`, o merge não provoca provisionamento | Não (equivale a desligado) |
+| `ENABLE_DEPLOY` | Variável | CD | Interruptor de entrega. Ausente ou diferente de `true`, o merge não provoca provisionamento. **Precisa ser de repositório**: a condição está no `if` do job, avaliado antes de o environment ser aplicado | Não (equivale a desligado) |
+| `ENABLE_TELEMETRY_COLLECTION` | Variável | CD | Interruptor da camada de coleta | Não (equivale a desligado) |
 
 ### Escopo de environment `production`
 
 | Nome | Tipo | Workflow | Finalidade | Obrigatório |
 | --- | --- | --- | --- | --- |
 | `CUSTOMER_JWT_PRIVATE_KEY` | Segredo | CD | Metade privada do par que assina o token externo. O valor é gravado no gerenciador de segredos pela entrega | Sim |
-| `DD_API_KEY` | Segredo | CD | Credencial do destino de telemetria | Somente quando a coleta está ligada |
-| `ENABLE_TELEMETRY_COLLECTION` | Variável | CD | Interruptor da camada de coleta | Não (equivale a desligado) |
 
-Os dois segredos acima são usados **exclusivamente** pela entrega, e por isso
-vivem no environment: nenhum workflow de branch os alcança.
+Esse segredo é usado **exclusivamente** pela entrega, e é o material mais
+sensível da solução — por isso vive no environment, onde nenhum workflow de
+branch o alcança.
+
+A credencial do destino de telemetria fica de fora dessa regra por um motivo
+concreto: ela é a **mesma** que a API usa, já existe no escopo da organização, e
+uma cópia no environment não reduziria o alcance que ela já tem — apenas
+criaria um segundo lugar para expirar.
 
 ### Passos manuais, sem automação
 

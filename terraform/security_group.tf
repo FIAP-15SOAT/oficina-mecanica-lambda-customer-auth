@@ -5,8 +5,9 @@
 # alcança banco, gerenciador de segredos e destino de telemetria, os dois
 # últimos pelo gateway de tradução de rede que já existe nas rotas privadas.
 resource "aws_security_group" "secgrp_lambda" {
-  name        = local.secgrp_lambda_name
-  description = "Egresso da função de autenticação externa de clientes"
+  name = local.secgrp_lambda_name
+  # O EC2 recusa a descricao de um security group fora de ASCII.
+  description = "Egress for the external customer authentication function"
   vpc_id      = local.vpc_id
 
   egress {
