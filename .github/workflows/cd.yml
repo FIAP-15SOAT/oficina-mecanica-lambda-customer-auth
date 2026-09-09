@@ -147,13 +147,6 @@ jobs:
             echo "- Coleta de telemetria: \`${{ vars.ENABLE_TELEMETRY_COLLECTION == 'true' }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Os portões vivem em job próprio para que a leitura do resultado seja
-  # honesta: quando eles reprovam, a função **foi** publicada — o que falhou foi
-  # a verificação, e o conserto é para frente. Um "Deploy Lambda" vermelho
-  # sugeriria que o provisionamento não aconteceu.
-  #
-  # `needs` já basta como condição: o job só executa se a entrega concluir com
-  # sucesso, e é pulado junto com ela quando o interruptor está desligado.
   post-deploy-gates:
     name: Post-Deploy Gates
     runs-on: ubuntu-latest
