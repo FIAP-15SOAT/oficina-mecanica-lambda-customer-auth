@@ -35,7 +35,7 @@ locals {
   telemetry_environment = var.enable_telemetry_collection ? {
     DD_API_KEY = var.telemetry_api_key
     DD_SITE    = var.telemetry_site
-    DD_ENV     = var.environment
+    DD_ENV     = "production"
     DD_SERVICE = "oficina-mecanica-lambda-customer-auth"
     DD_VERSION = var.service_version
 

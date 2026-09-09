@@ -115,7 +115,7 @@ isso a stack declara o conjunto completo, e não apenas o que a esteira injeta.
 | `NODE_EXTRA_CA_CERTS` | constante | Pacote de autoridades que a imagem do runtime já traz — ver [Banco de dados](database.md#transporte-cifrado) |
 | `NODE_OPTIONS` | constante, `--enable-source-maps` | A construção emite o mapa; sem a opção, a pilha de uma falha interna aponta para posição no pacote em vez de arquivo de origem |
 | `SERVICE_VERSION` | a entrega, `github.sha` | Alimenta o atributo `service.version` que o registro estruturado já emite |
-| `DD_API_KEY`, `DD_SITE`, `DD_ENV`, `DD_SERVICE`, `DD_VERSION`, `DD_SERVERLESS_LOGS_ENABLED`, `DD_TRACE_ENABLED` | camada de coleta | Declaradas apenas com o interruptor ligado — ver [Observabilidade](observability.md) |
+| `DD_API_KEY`, `DD_SITE`, `DD_ENV`, `DD_SERVICE`, `DD_VERSION`, `DD_SERVERLESS_LOGS_ENABLED`, `DD_TRACE_ENABLED` | camada de coleta | Declaradas apenas com o interruptor ligado. `DD_ENV` é fixo em `production` e não acompanha `var.environment` — ver [Observabilidade](observability.md) |
 
 Nenhum valor sensível aparece no código versionado: a credencial do banco é
 resolvida em execução, a chave de assinatura também, e a credencial de telemetria
