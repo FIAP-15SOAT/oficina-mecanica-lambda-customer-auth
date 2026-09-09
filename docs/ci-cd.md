@@ -7,7 +7,7 @@ análise estática e entrega.
 | --- | --- | --- | --- |
 | CI | `.github/workflows/ci.yml` | `push` em `feature/**` e `fix/**` | Pull Request aberto para `main` |
 | SAST | `.github/workflows/sast.yml` | Pull Request para `main` e `push` em `main` | Portão de qualidade da análise estática |
-| CD | `.github/workflows/cd.yml` | `push` em `main` e execução manual | Rota pública respondendo pela função |
+| CD | `.github/workflows/cd.yml` | `push` em `main` e execução manual | Rota pública respondendo pela função, em dois jobs: entrega e verificação |
 
 ![CI Workflow: os seis jobs de validação — Lint, Type Check, Unit Tests, E2E
 Tests, Package e Terraform Validation — executam em paralelo a partir do push e
@@ -132,7 +132,26 @@ pendente anterior**. Uma terceira entrega disparada enquanto a primeira executa
 descarta a segunda e assume a posição pendente. O resultado aceito é "o commit
 mais recente vence" — não "toda execução enfileirada será executada".
 
-### Passo a passo
+### Dois jobs, e o motivo de serem dois
+
+A entrega e a verificação vivem em **jobs separados**, encadeados por `needs`.
+
+| Job | O que faz | Quando executa |
+| --- | --- | --- |
+| `Deploy Lambda` | Publica a função | Passados os três portões de entrada |
+| `Post-Deploy Gates` | Prova que o que foi publicado atende | Só se a entrega concluir com sucesso |
+
+A separação é de leitura, e ela importa: quando um portão reprova, a função
+**foi** publicada — o que falhou foi a verificação. Com tudo no mesmo job, um
+`Deploy Lambda` vermelho sugeriria que o provisionamento não aconteceu, e a
+reação instintiva seria reverter. É o oposto do certo: os modos de falha que os
+portões pegam se consertam **para frente**.
+
+`needs` sozinho já é a condição do segundo job — ele é pulado junto com o
+primeiro quando o interruptor está desligado, e não executa quando a entrega
+falha.
+
+#### `Deploy Lambda`
 
 | # | Passo | Observação |
 | --- | --- | --- |
@@ -140,11 +159,21 @@ mais recente vence" — não "toda execução enfileirada será executada".
 | 2 | Instalar dependências | `npm ci` a partir de `app/` |
 | 3 | Construir | `esbuild` para `app/dist` |
 | 4 | Autenticar na nuvem | Credencial estática com token de sessão, do escopo da organização |
-| 5 | `terraform init` / `validate` / `plan` | Arquivo de bloqueio de provedores em modo somente-leitura |
+| 5 | `terraform init` / `validate` / `plan` | Provedores fixados pelo arquivo de bloqueio versionado |
 | 6 | `terraform apply` | O `.zip` é montado pela própria ferramenta a partir de `app/dist`, e uma versão imutável é publicada |
-| 7 | Gravar o valor da chave de assinatura | Idempotente: o identificador de requisição vem do resumo criptográfico do material, então reexecutar com a mesma chave devolve a versão que já existe |
-| 8 | **Portão 1 — invocação real** | Evento sintético, credencial estruturalmente válida e inexistente. Exige `401` |
-| 9 | **Portão 2 — rota pública** | Mesmo corpo, pela rota publicada. Exige `401` |
+| 7 | Ler os outputs da stack | Publica nome da função e endereço público como saídas do job |
+| 8 | Gravar o valor da chave de assinatura | Idempotente: o identificador de requisição vem do resumo criptográfico do material, então reexecutar com a mesma chave devolve a versão que já existe |
+
+#### `Post-Deploy Gates`
+
+| # | Passo | Observação |
+| --- | --- | --- |
+| 1 | Autenticar na nuvem | O job não compartilha sistema de arquivos nem credencial com o anterior |
+| 2 | **Portão 1 — invocação real** | Evento sintético, credencial estruturalmente válida e inexistente. Exige `401` |
+| 3 | **Portão 2 — rota pública** | Mesmo corpo, pela rota publicada. Exige `401` |
+
+O nome da função e o endereço público chegam pelas saídas do job de entrega —
+nada é digitado, e nada é recalculado.
 
 ### Os dois portões pós-implantação
 
@@ -164,6 +193,8 @@ A discriminação vem de graça do tradutor de respostas que a função já tem:
 | `503` | A operação no banco falhou. O tradutor de respostas devolve `503` para **qualquer** falha de banco — rede, credencial ou schema —, porque a causa não vaza para o chamador. Ela está na linha `db.query.failed` do log da função |
 | `500` | Configuração inválida ou falha de assinatura |
 | Ausência de resposta da aplicação | Pacote ou rede quebrados |
+
+Os dois vivem no job `Post-Deploy Gates`, depois de a entrega concluir.
 
 **Portão 2 — rota pública.** O único elo que a invocação direta **não** exercita
 é a autorização de invocação concedida ao API Gateway. Sem ela a rota responde erro de
