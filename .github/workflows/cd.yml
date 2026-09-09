@@ -23,6 +23,9 @@ jobs:
     name: Deploy Lambda
     runs-on: ubuntu-latest
     environment: production
+    outputs:
+      function_name: ${{ steps.tf.outputs.function_name }}
+      api_endpoint: ${{ steps.tf.outputs.api_endpoint }}
     if: >-
       github.ref == 'refs/heads/main' &&
       (vars.ENABLE_DEPLOY == 'true' || github.event_name == 'workflow_dispatch')
@@ -132,6 +135,41 @@ jobs:
           rm -f /tmp/customer-auth-private.pem
           echo "Versão corrente do segredo: $(jq -r '.VersionId' /tmp/put-secret-value.json)"
 
+      - name: Record the deployment in the job summary
+        if: always()
+        run: |
+          {
+            echo '### Entrega'
+            echo ''
+            echo "- Função: \`${{ steps.tf.outputs.function_name }}\`"
+            echo "- Versão publicada: \`${{ steps.tf.outputs.function_version }}\`"
+            echo "- Commit implantado: \`${{ github.sha }}\`"
+            echo "- Coleta de telemetria: \`${{ vars.ENABLE_TELEMETRY_COLLECTION == 'true' }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Os portões vivem em job próprio para que a leitura do resultado seja
+  # honesta: quando eles reprovam, a função **foi** publicada — o que falhou foi
+  # a verificação, e o conserto é para frente. Um "Deploy Lambda" vermelho
+  # sugeriria que o provisionamento não aconteceu.
+  #
+  # `needs` já basta como condição: o job só executa se a entrega concluir com
+  # sucesso, e é pulado junto com ela quando o interruptor está desligado.
+  post-deploy-gates:
+    name: Post-Deploy Gates
+    runs-on: ubuntu-latest
+    needs: deploy
+    permissions:
+      contents: read
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
       # Primeiro portão: a invocação direta prova, em cadeia, que o pacote
       # carrega, a configuração é válida, os dois segredos foram lidos, a chave
       # importou e a interface de rede alcança o banco.
@@ -141,7 +179,7 @@ jobs:
       # assinatura; ausência de resposta = pacote ou rede.
       - name: Post-deploy gate — real invocation
         env:
-          FUNCTION_NAME: ${{ steps.tf.outputs.function_name }}
+          FUNCTION_NAME: ${{ needs.deploy.outputs.function_name }}
         run: |
           set -euo pipefail
 
@@ -197,7 +235,7 @@ jobs:
       # aqui só pode ter vindo da função.
       - name: Post-deploy gate — public route
         env:
-          API_ENDPOINT: ${{ steps.tf.outputs.api_endpoint }}
+          API_ENDPOINT: ${{ needs.deploy.outputs.api_endpoint }}
         run: |
           set -euo pipefail
 
@@ -216,15 +254,3 @@ jobs:
           fi
 
           echo "Portão 2 aprovado: a rota pública é atendida pela função."
-
-      - name: Record the deployment in the job summary
-        if: always()
-        run: |
-          {
-            echo '### Entrega'
-            echo ''
-            echo "- Função: \`${{ steps.tf.outputs.function_name }}\`"
-            echo "- Versão publicada: \`${{ steps.tf.outputs.function_version }}\`"
-            echo "- Commit implantado: \`${{ github.sha }}\`"
-            echo "- Coleta de telemetria: \`${{ vars.ENABLE_TELEMETRY_COLLECTION == 'true' }}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
