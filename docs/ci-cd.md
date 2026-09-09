@@ -161,7 +161,7 @@ A discriminação vem de graça do tradutor de respostas que a função já tem:
 | Resposta | Significa |
 | --- | --- |
 | `401` | Banco alcançado, sem correspondência — **é o resultado esperado** |
-| `503` | Banco inalcançável: a interface de rede não chega lá |
+| `503` | A operação no banco falhou. O tradutor de respostas devolve `503` para **qualquer** falha de banco — rede, credencial ou schema —, porque a causa não vaza para o chamador. Ela está na linha `db.query.failed` do log da função |
 | `500` | Configuração inválida ou falha de assinatura |
 | Ausência de resposta da aplicação | Pacote ou rede quebrados |
 

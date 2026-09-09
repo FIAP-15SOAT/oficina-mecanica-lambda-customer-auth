@@ -137,7 +137,7 @@ jobs:
       # importou e a interface de rede alcança o banco.
       #
       # A discriminação vem do tradutor de respostas: 401 = banco alcançado sem
-      # correspondência; 503 = banco inalcançável; 500 = configuração ou
+      # correspondência; 503 = a operação no banco falhou; 500 = configuração ou
       # assinatura; ausência de resposta = pacote ou rede.
       - name: Post-deploy gate — real invocation
         env:
@@ -182,7 +182,7 @@ jobs:
           status="$(jq -r '.statusCode // empty' /tmp/gate-response.json)"
           case "${status}" in
             401) echo "Portão 1 aprovado: a função recusou a credencial." ;;
-            503) echo "::error::A função respondeu indisponibilidade — a interface de rede não alcança o banco."; exit 1 ;;
+            503) echo "::error::A função respondeu indisponibilidade: a operação no banco falhou. A causa — rede, credencial ou schema — está na linha db.query.failed do log da função."; exit 1 ;;
             500) echo "::error::A função respondeu erro interno — configuração inválida ou falha de assinatura."; exit 1 ;;
             "")  echo "::error::A invocação não produziu resposta da aplicação — pacote ou rede quebrados."; exit 1 ;;
             *)   echo "::error::A função respondeu ${status}, e o portão exige 401."; exit 1 ;;
