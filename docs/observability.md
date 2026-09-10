@@ -49,11 +49,19 @@ variáveis de ambiente, e nada mais.
 | Interruptor | `ENABLE_TELEMETRY_COLLECTION`, no environment de produção |
 | Credencial do destino | `DD_API_KEY`, segredo do environment |
 | Destino e versão da camada | Variáveis da infraestrutura com valor padrão versionado |
+| Ambiente no destino | `DD_ENV` fixo em `production` |
 
 Com o interruptor desligado, a função é provisionada **sem** a camada e opera
 normalmente. Com ele ligado e a credencial ausente, a entrega reprova indicando
 qual credencial falta — uma camada anexada que não entrega nada seria pior que
 nenhuma.
+
+`DD_ENV` é fixo em `production`, e não acompanha o nome do ambiente desta
+stack — que é `prod-simulated`. O valor não descreve onde a infraestrutura vive:
+ele nomeia, no destino de telemetria, **o ambiente observado**. A API emite
+`env:production`, e uma função que emitisse `prod-simulated` ficaria de fora de
+qualquer consulta, dashboard ou alerta escopado por ambiente. O nome da stack
+continua sendo `prod-simulated` em toda a nomenclatura de recurso da AWS.
 
 Destino e versão da camada são constantes versionadas, e não variáveis do
 provedor: revisáveis no Pull Request, com diferença visível, sem estado escondido
