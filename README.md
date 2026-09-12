@@ -25,9 +25,9 @@ Projeto acadêmico da pós-graduação em Arquitetura de Software da FIAP (turma
 A oficina precisa que o **cliente final** — e não apenas o funcionário — se
 autentique para consultar as próprias ordens de serviço e aprovar ou rejeitar
 orçamentos. A API principal já verifica o token externo por uma estratégia
-dedicada e já administra os vínculos entre pessoa e cliente, mas **nenhum
-componente emite esse token**: o fluxo de autenticação externa foi
-deliberadamente extraído para uma função serverless. É esta.
+dedicada e já administra os vínculos entre pessoa e cliente. A emissão do
+token externo pertence a esta função serverless, separada do login interno
+HS256 da API; o cliente usa o RS256 recebido aqui nas rotas `/api/me/**`.
 
 ## 🎯 Responsabilidade
 
@@ -113,6 +113,44 @@ Todos rodam a partir de `app/`.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run format` | Aplica a formatação |
 
+## 📁 Estrutura do Repositório
+
+```text
+.
+├── .github/
+│   ├── actions/setup-ci/       # Composite: Node 24, cache npm e npm ci
+│   └── workflows/              # CI, SAST e CD da função
+├── app/
+│   ├── src/
+│   │   ├── domain/              # Entidades, contratos e regras de domínio
+│   │   ├── application/         # Casos de uso e portas
+│   │   ├── interface-adapters/  # Controller e apresentação do login
+│   │   ├── infrastructure/     # Banco, JWT, logging e adaptação do evento
+│   │   ├── bootstrap.ts        # Composição memoizada
+│   │   └── handler.ts          # Ponto de entrada da plataforma
+│   ├── test/                    # Testes unitários e E2E
+│   ├── events/                  # Eventos para execução local
+│   ├── scripts/                 # Scripts de apoio à aplicação
+│   ├── .env.example            # Referência de configuração local
+│   └── package.json            # Dependências e comandos npm
+├── docs/
+│   ├── adr/                    # Decisões arquiteturais
+│   ├── diagrams/               # PNGs renderizados na documentação
+│   ├── architecture.md         # Arquitetura e fluxo de autenticação
+│   ├── ci-cd.md                # Workflows, jobs, steps e configuração GitHub
+│   ├── terraform.md            # Recursos, inputs, outputs e aplicação local
+│   ├── contracts.md            # Login, respostas e claims
+│   ├── database.md             # Consulta, pool e TLS
+│   ├── security.md             # Ameaças e custódia da chave
+│   ├── logging.md              # Envelope, campos e eventos
+│   ├── observability.md        # Coleta opcional e limites de correlação
+│   ├── local-setup.md          # Desenvolvimento e integração com a API
+│   └── testing.md              # Unitários, E2E e cobertura
+├── infra/                      # Função AWS Lambda e integrações
+├── .gitignore
+└── README.md
+```
+
 ## 📚 Documentação
 
 | Documento | Conteúdo |
@@ -138,16 +176,16 @@ Todos rodam a partir de `app/`.
 
 | Repositório | Papel | Relação com esta função |
 | --- | --- | --- |
-| `oficina-mecanica-app` | API principal (NestJS) | **Dona do schema** e da identidade. Verifica o token emitido aqui, com uma estratégia separada da interna. Sua imagem é usada como migrador do banco local e de teste |
-| `oficina-mecanica-infra-base` | Rede | Dona da VPC e das subnets privadas às quais esta função é anexada |
-| `oficina-mecanica-database` | Banco | Dono da instância e da credencial. Expõe endereço, porta, nome e o identificador do segredo por output |
-| `oficina-mecanica-gateway` | API Gateway | Publica `POST /customer-auth/login` e consome [`docs/contracts.md`](docs/contracts.md). Esta stack concede a autorização de invocação |
-| `oficina-mecanica-k8s` | Cluster | Executa a API principal. Não participa desta função |
-| **`oficina-mecanica-lambda-customer-auth`** | **Esta função** | Emite o token externo, e é dona da própria stack de infraestrutura |
+| [`oficina-mecanica-api`](https://github.com/FIAP-15SOAT/oficina-mecanica-api) | API principal (NestJS) | **Dona do schema** e da identidade. Verifica o token emitido aqui, com uma estratégia separada da interna. Sua imagem é usada como migrador do banco local e de teste |
+| [`oficina-mecanica-infra-base`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Rede | Dona da VPC e das subnets privadas às quais esta função é anexada |
+| [`oficina-mecanica-infra-database`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database) | Banco | Dono da instância e da credencial. Expõe endereço, porta, nome e o identificador do segredo por output |
+| [`oficina-mecanica-api-gateway`](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway) | API Gateway | Publica `POST /customer-auth/login` e consome [`docs/contracts.md`](docs/contracts.md). Esta stack concede a autorização de invocação |
+| [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) | Cluster | Executa a API principal. Não participa desta função |
+| [`oficina-mecanica-custom-monitoring`](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring) | Observabilidade | Provisiona dashboards, monitors e Synthetic; a coleta opcional desta função é configurada nesta stack |
+| **[`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth)** | **Esta função** | Emite o token externo, e é dona da própria stack de infraestrutura |
 
 O modelo de identidade — `users.cpf`, `user_customers`, `customers.is_active` —
-é definido e mantido pela API. O racional está no ADR de autenticação de clientes
-daquele repositório (`docs/adr/0004-autenticacao-de-clientes.md`). Este
+é definido e mantido pela API. O contrato de acesso está em [API › Identidade externa e autorização por vínculo](https://github.com/FIAP-15SOAT/oficina-mecanica-api/blob/main/docs/architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo). Este
 repositório **lê** esse modelo e não contém DDL algum.
 
 ## 📦 Estado
@@ -159,7 +197,7 @@ repositório **lê** esse modelo e não contém DDL algum.
   estática impõe o seu portão de qualidade, e a entrega provisiona a função e a
   publica — terminando em **dois portões**: a invocação real e a chamada à rota
   pública, ambas exigindo recusa de credencial.
-- A infraestrutura vive em [`terraform/`](terraform/): a função em subnets
+- A infraestrutura vive em [`infra/`](infra/): a função em subnets
   privadas, o seu grupo de segurança, o grupo de log, o segredo da chave de
   assinatura, a concorrência reservada e a autorização de invocação concedida à
   API Gateway.

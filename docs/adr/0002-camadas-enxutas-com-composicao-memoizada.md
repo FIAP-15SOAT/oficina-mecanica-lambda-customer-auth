@@ -7,7 +7,7 @@ Aceito — 2026-08-31
 ## Contexto
 
 A API principal mantém Clean Architecture com **dois** anéis de adaptadores: um
-livre de framework e outro que é o API Gateway do framework, com módulos, provedores e
+livre de framework e outro que é a fronteira de adaptação do framework, com módulos, provedores e
 injeção por contêiner. Esse é o patamar de qualidade esperado aqui.
 
 Mas parte daquela estrutura existe **por causa do framework**. Nesta função não

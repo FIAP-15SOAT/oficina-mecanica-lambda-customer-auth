@@ -1,5 +1,8 @@
 # CI/CD
 
+A aplicação fica em `app/` e as etapas Terraform executam em `infra/`,
+seguindo a mesma organização da API.
+
 Três workflows, com ciclos de gatilho independentes: validação de integração,
 análise estática e entrega.
 
@@ -15,11 +18,17 @@ convergem no job Open Pull Request, que abre o PR para main](diagrams/ci-workflo
 
 ## Integração contínua
 
+Os jobs usam `contents: read` no `GITHUB_TOKEN`; `open-pr` cria PRs com token
+efêmero do GitHub App (`BOT_APP_ID` variable, `BOT_PRIVATE_KEY` secret).
+O composite `setup-ci` tem dois steps: `Set up Node` instala Node 24 e habilita
+cache por `app/package-lock.json`; `Install dependencies` executa `npm ci`.
+
 O gatilho é `push` nas duas famílias de branch, e **não** o evento de Pull
 Request: incluí-lo duplicaria toda execução. Um `push` mais recente na mesma
 branch cancela a execução anterior.
 
-Uma branch fora de `feature/**` e `fix/**` não produz verificação alguma.
+Uma branch fora de `feature/**` e `fix/**` não produz execução do CI.
+O SAST ainda pode executar em um Pull Request para `main`.
 Combinada com as verificações obrigatórias da `main`, essa ausência **é o portão
 de nomenclatura de branch**: o Pull Request fica em "aguardando reporte" até a
 branch ser renomeada. É intencional, e não se corrige afrouxando o gatilho.
@@ -36,6 +45,89 @@ depende de todos.
 | `Package` | Que o artefato **carrega** | Alias de caminho sobrevivente no pacote, dependência de carregamento não embutida, ou pacote acima do limite de envio direto |
 | `Terraform Validation` | Formatação, consistência e — quando o ambiente responde — a prévia | Formatação divergente, configuração inconsistente, ou prévia que **execute e falhe** |
 | `Open Pull Request` | — | Não é verificação de validade e não entra nas obrigatórias |
+
+### Steps de cada job de CI
+
+#### `lint` — Lint
+
+Sem `needs`; executa em paralelo aos demais jobs de validação.
+
+| # | Step no workflow | O que faz |
+| --- | --- | --- |
+| 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 3 | Lint | Executa `npm run lint`; formatação/restrições de camada divergentes reprovam. |
+
+#### `type-check` — Type Check
+
+Sem `needs`; executa em paralelo aos demais jobs de validação.
+
+| # | Step no workflow | O que faz |
+| --- | --- | --- |
+| 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 3 | Type check | Executa `npm run typecheck`; erro de tipo reprova antes do empacotamento esbuild. |
+
+#### `unit-tests` — Unit Tests
+
+Sem `needs`; executa em paralelo aos demais jobs de validação.
+
+| # | Step no workflow | O que faz |
+| --- | --- | --- |
+| 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 3 | Unit tests with coverage | Executa `npm run test:cov` e exige os limiares de cobertura do projeto. |
+
+#### `e2e-tests` — E2E Tests
+
+Sem `needs`; executa em paralelo aos demais jobs de validação.
+
+| # | Step no workflow | O que faz |
+| --- | --- | --- |
+| 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 3 | Check out the API repository at the pinned commit | Obtém a API em `API_MIGRATOR_COMMIT` para usar o schema real; não acompanha main implicitamente. |
+| 4 | Build the migrator image from source | Constrói localmente a imagem migradora da API no commit fixado. |
+| 5 | E2E tests against the API-owned schema | Executa a suíte E2E com o schema da API em banco descartável; incompatibilidade reprova. |
+
+#### `package` — Package
+
+Sem `needs`; executa em paralelo aos demais jobs de validação.
+
+| # | Step no workflow | O que faz |
+| --- | --- | --- |
+| 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 3 | Build | Compila/empacota a aplicação em `app/dist` com o comando de build do projeto. |
+| 4 | Load the entry point with no dependencies installed | Carrega o pacote em diretório temporário fora da árvore, sem node_modules, e exige a exportação do handler. |
+| 5 | Check the package against the direct upload limit | Compacta/verifica o tamanho frente ao limite de envio direto da função; excesso reprova. |
+
+#### `tf-validate` — Terraform Validation
+
+Sem `needs`; executa em paralelo aos demais jobs de validação.
+
+| # | Step no workflow | O que faz |
+| --- | --- | --- |
+| 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
+| 2 | hashicorp/setup-terraform | Instala/configura a CLI Terraform para os comandos seguintes. |
+| 3 | Terraform Fmt Check | Executa `terraform fmt -check -recursive`; divergência de formatação reprova o job. |
+| 4 | Terraform Init Lambda Customer Auth | Executa `terraform init -backend=false -no-color`: instala os providers sem conectar ao backend. Registry/cache indisponível pode reprovar. |
+| 5 | Terraform Validate Lambda Customer Auth | Executa `terraform validate -no-color` com os schemas instalados; inconsistência de sintaxe, tipo ou referência reprova. |
+| 6 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 7 | Build the package for the plan | Gera `app/dist` no próprio job, pois o archive_file do Terraform precisa dessa saída para o plan. |
+| 8 | Configure AWS Credentials | Configura access key, secret key e session token da mesma sessão AWS, em us-east-1. Este step tolera falha e conserva `aws_creds.outcome` para decidir entre plan e nota de skip. |
+| 9 | Terraform Plan Lambda Customer Auth | Só com `aws_creds.outcome == success`: executa init com backend (`-reconfigure`) e plan. Qualquer erro desses comandos reprova o job. |
+| 10 | Note skipped plan in job summary | Só com `aws_creds.outcome == failure`: registra no resumo que a prévia foi pulada; não ignora erro de um plan executado. |
+
+#### `open-pr` — Open Pull Request
+
+`needs`: `lint`, `type-check`, `unit-tests`, `e2e-tests`, `package`, `tf-validate`. Executa após sucesso de todos.
+
+| # | Step no workflow | O que faz |
+| --- | --- | --- |
+| 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
+| 2 | Generate GitHub App Token | Gera `app_token` com `BOT_APP_ID` e `BOT_PRIVATE_KEY`; o próximo step recebe o token como `GH_TOKEN`. |
+| 3 | Open a PR to main if none exists | Consulta `gh pr list` para head → main e cria o PR só se não houver um aberto; erro do CLI reprova o job. |
 
 ### O que `Package` afirma, e por quê assim
 
@@ -68,9 +160,11 @@ compatibilidade.
 `terraform fmt`, `terraform init -backend=false` e `terraform validate` executam
 sempre, sem credenciais: fontes de dados não são avaliadas nessas etapas.
 
-A prévia é tentada apenas quando as credenciais do ambiente são válidas. Com o
-laboratório desligado, ela é pulada, o resumo da execução registra o fato, e o
-job **aprova**. Uma prévia que execute e falhe reprova.
+A prévia executa somente se `Configure AWS Credentials` concluir com sucesso.
+A falha desse step é tolerada e produz a nota de skip; um laboratório
+indisponível depois da autenticação pode falhar no init/plan e reprovar o job.
+As validações estáticas e a construção do pacote precisam passar em ambos
+os casos.
 
 O job constrói o pacote antes da prévia, no próprio job: a configuração declara
 uma fonte de dados sobre o diretório de saída da construção, e jobs não
@@ -82,8 +176,20 @@ compartilham sistema de arquivos.
 completo, Setup CI, Unit tests with coverage e SonarQube Scan — em sequência,
 terminando no Quality Gate](diagrams/sast-workflow.png)
 
+| # | Step no workflow | O que faz |
+| --- | --- | --- |
+| 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 3 | Unit tests with coverage | Executa `npm run test:cov` e exige os limiares de cobertura do projeto. |
+| 4 | SonarQube Scan | Analisa `app/` com `SONAR_TOKEN`, consumindo o relatório de cobertura da mesma execução; aguarda o Quality Gate configurado. |
+
 Workflow próprio, com ciclo de gatilho próprio: o plano de análise da solução
 cobre a branch principal e Pull Requests, não branches de trabalho.
+
+O SAST dispara nos eventos `opened`, `synchronize` e `reopened` de PRs para
+`main`, além de pushes em `main`. Usa concorrência
+`sast-${{ github.event.pull_request.number || github.ref }}` com cancelamento
+de execuções obsoletas. Não há `needs` entre CI, SAST e CD.
 
 Sendo separado, uma análise vermelha na `main` não interrompe uma entrega em
 curso; sendo verificação obrigatória, bloqueia o merge.
@@ -101,14 +207,11 @@ aguarda o portão e reprova quando ele reprova.
 ## Entrega contínua
 
 ![CD Workflow: gatilho em push na main ou workflow_dispatch, portão de entrada
-por branch e interruptor, e os dez steps do job único Deploy Lambda — Checkout,
-Validate required secrets, Setup CI, Build, Setup Terraform, Configure AWS
-Credentials, Terraform Init/Validate/Plan/Apply, Write the signing key value
-idempotently e os dois portões pós-implantação](diagrams/cd-workflow.png)
+por branch e interruptor, e os jobs Deploy Lambda (13 steps) e Post-Deploy Gates (3 steps), ligados por needs: deploy](diagrams/cd-workflow.png)
 
 ### Portões de entrada
 
-Três condições, nesta ordem:
+Duas condições de entrada e o escopo do job:
 
 1. **A referência é a branch principal.** No disparo manual a referência é a
    branch escolhida por quem dispara. A condição está no job, e é ela que carrega
@@ -116,9 +219,7 @@ Três condições, nesta ordem:
 2. **O interruptor `ENABLE_DEPLOY` está ligado**, ou a execução é manual. O
    disparo manual ignora o interruptor de propósito: é o caminho de ligar o
    ambiente sob demanda. Uma execução pulada pelo interruptor **não é falha**.
-3. **O environment `production` aceita a branch.** A sua política de branch de
-   implantação declara a mesma restrição do item 1. É defesa em profundidade:
-   protege se o workflow for editado depois.
+3. **O job usa o environment `production`.** É o escopo da chave de assinatura.
 
 ### Enfileiramento
 
@@ -153,24 +254,31 @@ falha.
 
 #### `Deploy Lambda`
 
-| # | Passo | Observação |
+| # | Step no workflow | O que faz |
 | --- | --- | --- |
-| 1 | Validar os segredos exigidos | **Antes de qualquer chamada à nuvem.** Chave ausente ou sem forma de PEM reprova aqui, com o item nomeado. Interruptor de coleta ligado sem credencial do destino também |
-| 2 | Instalar dependências | `npm ci` a partir de `app/` |
-| 3 | Construir | `esbuild` para `app/dist` |
-| 4 | Autenticar na nuvem | Credencial estática com token de sessão, do escopo da organização |
-| 5 | `terraform init` / `validate` / `plan` | Provedores fixados pelo arquivo de bloqueio versionado |
-| 6 | `terraform apply` | O `.zip` é montado pela própria ferramenta a partir de `app/dist`, e uma versão imutável é publicada |
-| 7 | Ler os outputs da stack | Publica nome da função e endereço público como saídas do job |
-| 8 | Gravar o valor da chave de assinatura | Idempotente: o identificador de requisição vem do resumo criptográfico do material, então reexecutar com a mesma chave devolve a versão que já existe |
+| 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
+| 2 | Validate required secrets | Antes de chamadas à nuvem, verifica a chave de assinatura/PEM e a credencial Datadog quando coleta estiver ligada; ausência reprova com o nome do item. |
+| 3 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 4 | Build | Compila/empacota a aplicação em `app/dist` com o comando de build do projeto. |
+| 5 | hashicorp/setup-terraform | Instala/configura a CLI Terraform para os comandos seguintes. |
+| 6 | Configure AWS Credentials | Configura access key, secret key e session token da mesma sessão AWS, em us-east-1. |
+| 7 | Terraform Init | Executa `terraform init -no-color`, instalando providers e configurando o backend S3 real. |
+| 8 | Terraform Validate | Executa `terraform validate -no-color`; inconsistência de configuração reprova o job. |
+| 9 | Terraform Plan | Executa `terraform plan -no-color` com `TF_VAR_service_version=github.sha`, coleta opcional e chave Datadog; consulta os três states e mostra as alterações. |
+| 10 | Terraform Apply | Usa os mesmos `TF_VAR_*`, empacota `app/dist` e aplica a função e a permissão; `publish=true` registra versões quando há mudança versionável. Não aplica plano salvo. |
+| 11 | Read stack outputs | Lê nome/versão da função, ARN do segredo e endpoint público; publica as saídas usadas pelos steps e pelo job pós-deploy. |
+| 12 | Write the signing key value idempotently | Grava o material no Secrets Manager com identificador derivado do hash; mesma chave reutiliza a versão existente. |
+| 13 | Record the deployment in the job summary | Registra no resumo commit, função, versão publicada e estado da coleta. Executa com `if: always()`, inclusive depois de falha; o resumo não transforma uma falha em sucesso. |
 
 #### `Post-Deploy Gates`
 
-| # | Passo | Observação |
+`id: post-deploy-gates`; `needs: deploy`.
+
+| # | Step no workflow | O que faz |
 | --- | --- | --- |
-| 1 | Autenticar na nuvem | O job não compartilha sistema de arquivos nem credencial com o anterior |
-| 2 | **Portão 1 — invocação real** | Evento sintético, credencial estruturalmente válida e inexistente. Exige `401` |
-| 3 | **Portão 2 — rota pública** | Mesmo corpo, pela rota publicada. Exige `401` |
+| 1 | Configure AWS Credentials | Configura access key, secret key e session token da mesma sessão AWS, em us-east-1. |
+| 2 | Post-deploy gate — real invocation | Invoca a função com evento de credencial inexistente e exige 401; verifica pacote, configuração, segredos e acesso ao banco. |
+| 3 | Post-deploy gate — public route | Envia a mesma credencial à rota pública e exige 401; inclui permissão do Gateway para invocar a função. |
 
 O nome da função e o endereço público chegam pelas saídas do job de entrega —
 nada é digitado, e nada é recalculado.
@@ -200,6 +308,10 @@ Os dois vivem no job `Post-Deploy Gates`, depois de a entrega concluir.
 é a autorização de invocação concedida ao API Gateway. Sem ela a rota responde erro de
 integração com a função existindo e saudável — exatamente o estado que esta
 esteira existe para encerrar.
+
+Os gates exercitam a inicialização e a recusa de credencial. Um `401` não
+exercita a assinatura de um JWT novo nem comprova sua aceitação pela API;
+esse fluxo positivo exige um cliente de teste com vínculo ativo.
 
 O endereço vem do output do state remoto da stack do API Gateway, e não é digitado. A
 rota não declara autorizador próprio, então uma recusa de credencial ali só pode
@@ -282,9 +394,8 @@ criaria um segundo lugar para expirar.
 
 ### Passos manuais, sem automação
 
-1. Criar o environment `production` **com política de branch de implantação
-   restrita à `main`**. Sem regra, o environment é escopo de segredo, não
-   proteção.
+1. Criar o environment `production` para a chave de assinatura. Uma branch
+   policy restrita a `main` é opcional; o gate obrigatório já está no job.
 2. Carregar `CUSTOMER_JWT_PRIVATE_KEY` como segredo do environment, a partir do
    arquivo local. O cofre do provedor não faz parte do repositório: a regra de
    exclusão do controle de versão é irrelevante para ele.
@@ -316,9 +427,7 @@ Aceito, com três atenuantes:
   é revisada **antes** da integração — o padrão dos quatro repositórios de
   infraestrutura da solução.
 
-O que um workflow de branch alcança é a credencial do laboratório, e **nada** do
-material próprio desta função: a chave de assinatura e a credencial de telemetria
-vivem no environment.
+A chave de assinatura permanece no environment `production`, fora dos jobs de branch de trabalho. As credenciais AWS vêm da organização; `DD_API_KEY` também tem esse escopo, conforme o inventário acima, porque é compartilhada pela coleta da solução. Não há uma cópia isolada no environment para essa credencial.
 
 ## Solução de problemas
 
@@ -409,7 +518,10 @@ O ruleset da `main` recusa `push` direto, recusa reescrita de histórico, recusa
 exclusão e exige Pull Request. Nenhum ator é autorizado a burlar, administradores
 inclusive.
 
-As verificações obrigatórias são as seis de validação mais a análise estática:
+Os checks produzidos são os seis de validação e o SAST. `Terraform Validation`
+combina verificações estáticas e `plan` dependente do lab; mantê-lo fora dos
+required checks evita bloquear PRs por indisponibilidade cloud. A seleção
+externa do ruleset deve ser conferida em Settings; ela não é declarada no YAML:
 
 ```
 Lint · Type Check · Unit Tests · E2E Tests · Package · Terraform Validation · SAST

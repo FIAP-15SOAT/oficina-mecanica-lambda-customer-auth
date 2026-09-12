@@ -70,7 +70,11 @@ esta função nunca toca.
 
 ### 3. Versões publicadas, sem apelido
 
-Cada aplicação publica uma versão imutável. Nenhum apelido é adotado.
+A função usa `publish=true` e registra versão imutável quando há mudança
+versionável. Nenhum alias é adotado; gateway e gates usam o nome/ARN sem
+qualificador, que invoca `$LATEST`. A versão numerada é registrada para
+rastreabilidade, sem fixar o tráfego nela. Ver
+[AWS › Versões Lambda](https://docs.aws.amazon.com/lambda/latest/dg/configuration-versions.html).
 
 ### 4. Reversão por reconstrução
 
@@ -105,7 +109,7 @@ controla e paga uma verificação intrincada para vigiá-la. Rejeitada.
 reversão — segundos, em vez de uma reconstrução — e liberação progressiva. Exige
 mudar `locals.tf` do repositório do gateway e qualificar a autorização de
 invocação: uma mudança **entre repositórios** para obter uma reversão que
-reverter o commit já entrega, no mesmo modelo das outras quatro stacks.
+reverter o commit já entrega, no mesmo modelo das outras cinco stacks.
 Rejeitada nesta entrega, com o caminho mapeado.
 
 ## Consequências
@@ -128,5 +132,5 @@ irrelevante, porque ela já está publicando uma versão.
 ## Referências
 
 - [ADR 0003 › Artefato compactado](0003-bcrypt-em-javascript-puro.md)
-- [CI/CD › Entrega contínua](../ci-cd.md#entrega-continua)
+- [CI/CD › Entrega contínua](../ci-cd.md#entrega-contínua)
 - [Infraestrutura › O artefato](../terraform.md#o-artefato)

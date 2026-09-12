@@ -46,8 +46,8 @@ variáveis de ambiente, e nada mais.
 
 | | |
 | --- | --- |
-| Interruptor | `ENABLE_TELEMETRY_COLLECTION`, no environment de produção |
-| Credencial do destino | `DD_API_KEY`, segredo do environment |
+| Interruptor | `ENABLE_TELEMETRY_COLLECTION`, variable de repositório, convertida pelo CD em `TF_VAR_enable_telemetry_collection` |
+| Credencial do destino | `DD_API_KEY`, segredo compartilhado da organização |
 | Destino e versão da camada | Variáveis da infraestrutura com valor padrão versionado |
 | Ambiente no destino | `DD_ENV` fixo em `production` |
 
@@ -82,14 +82,16 @@ de trace.
 
 | Eixo | Liga |
 | --- | --- |
-| Identificador de correlação recebido do API Gateway | API Gateway → função → API. O mesmo identificador aparece nos registros dos três |
+| Identificador de correlação recebido do API Gateway | API Gateway → função, quando o cabeçalho passa pelo validador da Lambda. A chamada posterior à API é outra requisição e tem seu próprio ID |
 | Identificador de invocação da plataforma | A linha da aplicação ao registro de invocação no destino de telemetria |
 
 ## O que deliberadamente não é instrumentado
 
 Nem trace distribuído, nem exportador de trace, nem métrica de negócio.
 
-**A função é uma folha:** não chama outro serviço. As durações que um trace
+**A função é uma folha no fluxo de aplicação:** não chama a API principal
+nem encadeia outra função. Ela acessa PostgreSQL e Secrets Manager, mas
+não instrumenta essas chamadas com spans. As durações que um trace
 produziria — banco e verificação de senha — **já constam da linha de invocação**,
 e o custo de partida a frio de um kit de instrumentação não se paga contra sinal
 que já existe.
@@ -97,9 +99,9 @@ que já existe.
 O critério é o que o próprio ADR de telemetria da API estabelece: *a lacuna
 dominante não é instrumentação, é coleta*.
 
-**Gatilho para reabrir:** se a função passar a chamar outro serviço — deixando de
-ser folha —, um kit neutro exportando para a extensão passa a se pagar, e a
-decisão volta à mesa. Ver
+**Gatilho para reabrir:** se houver necessidade de spans de banco/segredos
+ou a função passar a encadear serviços de aplicação, avaliar instrumentação
+e medir overhead e custo antes de mudar a decisão. Ver
 [ADR 0005](adr/0005-coleta-de-telemetria-sem-instrumentacao.md).
 
 ## Verificação da coleta
@@ -115,4 +117,14 @@ Duas conferências fecham o quadro:
 
 1. Uma linha de log da função implantada carrega o identificador do commit em
    execução no atributo de versão de serviço.
-2. A mesma linha carrega o identificador de correlação recebido do API Gateway.
+2. Compare `request.id` com `requestId` do Gateway e `faas.invocation_id`
+   com o registro da plataforma. A Lambda rejeita IDs com `=`, `+` ou `/`
+   e usa o ID da invocação; não presuma igualdade com o Gateway nesse caso.
+
+A configuração atual anexa `Datadog-Extension` versão 99 quando a coleta
+está ligada, usa o site `us5.datadoghq.com` e define `DD_TRACE_ENABLED=false`.
+Não há SDK de tracing nem wrapper no handler. `aws.lambda.errors` mede erro
+de execução da plataforma; um `401`, `500` ou `503` retornado normalmente
+pelo handler exige diagnóstico pelo status do log da aplicação.
+Dashboards e monitors são provisionados em
+[`oficina-mecanica-custom-monitoring`](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring).
