@@ -16,9 +16,9 @@ credencial de cliente trafega.
 | Vazamento de detalhe interno | Corpo das respostas `500`/`503` | Mensagem constante; nada da exceção é repassado |
 | Injeção de SQL | Único parâmetro da consulta | Consulta parametrizada, CPF já reduzido a 11 dígitos pela validação |
 | Confusão de algoritmo no token | Verificação na API | `RS256` assimétrico, verificado por estratégia separada da interna; o token externo nunca alcança o verificador HMAC |
-| Escalonamento por claim forjada | Conteúdo do token | O token carrega apenas `sub`; papel e escopo nunca vêm dele |
-| Corpo hostil como negação de serviço | Corpo da requisição | Limite de 4096 bytes antes de qualquer desserialização |
-| Perda de conexões do banco | Concorrência | Pool de tamanho um por ambiente **e concorrência reservada em 10** na configuração da função — menos de um décimo do orçamento da instância |
+| Escalonamento por claim forjada | Conteúdo do token | Além de `iss`, `aud`, `iat` e `exp`, o token carrega `sub` como identidade; papel e escopo nunca vêm dele |
+| Corpo hostil como negação de serviço | Corpo da requisição | Limite de 4096 bytes depois da decodificação base64 e antes da desserialização JSON |
+| Perda de conexões do banco | Concorrência | Pool de tamanho um por ambiente e reserva configurável com default 10; orçamento compartilhado precisa ser validado — ver [Banco](database.md#orçamento-de-conexões) |
 | Análise dinâmica ausente | Superfície pública | A função não expõe superfície HTTP própria; a decisão e o que cobre a superfície no lugar estão no [ADR 0006](adr/0006-sem-analise-dinamica.md) |
 
 ## Anti-enumeração
@@ -37,8 +37,8 @@ inexistente" e afirma que são byte a byte iguais.
 A mensagem única fecha metade do problema. A outra metade é o **tempo**.
 
 A verificação de senha custa centenas de milissegundos; as demais recusas — CPF
-inexistente, conta inativa, ausência de vínculo — retornam antes dela e custam
-poucos milissegundos. **Essa diferença é observável**, e permite inferir se um
+inexistente, conta inativa — retornam antes dela. A ausência de vínculo
+ativo é avaliada depois de comparar a senha, conforme o caso de uso. **Essa diferença é observável**, e permite inferir se um
 CPF está cadastrado mesmo com as quatro respostas idênticas.
 
 **A decisão é conviver com isso**, alinhada à API principal, que aplica a mesma
@@ -78,7 +78,7 @@ memoizada. É esse o sinal a monitorar, e não a ausência de ambientes saudáve
 `CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID` aponta para um segredo cujo valor é o **PEM
 PKCS#8 puro** — não um JSON que o embrulhe —, com quebras de linha **reais**. A
 restauração de `\n` escapado existe apenas no caminho da variável de ambiente,
-que é a única forma que um `.env` transporta; o valor vindo do gerenciador de
+que é a forma adotada pelos exemplos deste repositório para `.env`; o valor vindo do gerenciador de
 segredos é usado como está, e um PEM guardado ali com `\n` literais falha a
 composição.
 
@@ -110,10 +110,10 @@ significa legível por quem tiver permissão de escrita.
 **O valor nunca transita pelo state da infraestrutura.** A stack declara o
 contêiner do segredo e não o seu valor; a entrega grava o valor de forma
 idempotente. Declará-lo na infraestrutura o colocaria em texto puro num bucket
-compartilhado por cinco stacks.
+compartilhado pelas seis stacks Terraform.
 
-A metade pública correspondente vive no repositório da API, que a usa para
-verificar o token. As duas metades são do mesmo par, gerado uma única vez fora
+A metade pública correspondente é configurada no ambiente da API e no seu
+Secret Kubernetes pelo CD; ela não precisa ser versionada para verificar o token. As duas metades são do mesmo par, gerado uma única vez fora
 de qualquer repositório.
 
 Nenhum segredo real é versionado em nenhum arquivo: `app/.env.example` contém
@@ -207,12 +207,13 @@ para que a divergência da recomendação seja escolha, e não descuido.
 O repositório é público, e três consequências são assumidas explicitamente:
 
 1. **Nenhum material sensível é versionado.** Chaves, `.env` e `terraform.tfvars`
-   estão fora do controle de versão, e nenhum valor de segredo aparece no código
-   de infraestrutura ou no state.
+   estão fora do controle de versão, e o material da chave privada não passa pelo state. A chave de
+   telemetria é sensível no Terraform, mas integra o environment da função
+   e permanece no state; `sensitive` não a remove desse arquivo.
 2. **A prévia de infraestrutura na validação usa credencial da nuvem** num
    workflow disparado por `push` em branch de trabalho, e a sua saída vai para um
    log público. Aceito, com os atenuantes registrados em
-   [CI/CD › Exposição aceita conscientemente](ci-cd.md#exposicao-aceita-conscientemente).
+   [CI/CD › Exposição aceita conscientemente](ci-cd.md#exposição-aceita-conscientemente).
    O que um workflow de branch alcança é a credencial do laboratório, e **nada**
    do material próprio desta função.
 3. **Pedido de merge vindo de bifurcação não recebe segredo**, por política do

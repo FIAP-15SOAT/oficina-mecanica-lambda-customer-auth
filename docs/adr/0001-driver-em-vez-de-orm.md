@@ -86,4 +86,4 @@ privilegiada do que precisa, mitigada por ser somente leitura por construção.
 
 - [Banco de dados](../database.md)
 - [Testes › Ponta a ponta](../testing.md#ponta-a-ponta--npm-run-teste2e)
-- ADR de autenticação de clientes da API (`docs/adr/0004-autenticacao-de-clientes.md`, em `oficina-mecanica-api`) — o modelo de identidade que esta função lê
+- [API › Identidade externa e autorização por vínculo](https://github.com/FIAP-15SOAT/oficina-mecanica-api/blob/main/docs/architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo) — o modelo de identidade que esta função lê

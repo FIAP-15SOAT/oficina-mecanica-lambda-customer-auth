@@ -27,7 +27,7 @@ coverage
 *.tfplan
 crash.log
 crash.*.log
-terraform/build/
+infra/build/
 
 # Sensitive credentials
 terraform.tfvars

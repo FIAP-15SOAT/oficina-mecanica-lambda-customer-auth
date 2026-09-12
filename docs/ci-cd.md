@@ -1,5 +1,8 @@
 # CI/CD
 
+A aplicação fica em `app/` e as etapas Terraform executam em `infra/`,
+seguindo a mesma organização da API.
+
 Três workflows, com ciclos de gatilho independentes: validação de integração,
 análise estática e entrega.
 
@@ -15,11 +18,17 @@ convergem no job Open Pull Request, que abre o PR para main](diagrams/ci-workflo
 
 ## Integração contínua
 
+Os jobs usam `contents: read` no `GITHUB_TOKEN`; `open-pr` cria PRs com token
+efêmero do GitHub App (`BOT_APP_ID` variable, `BOT_PRIVATE_KEY` secret).
+O composite `setup-ci` tem dois steps: `Set up Node` instala Node 24 e habilita
+cache por `app/package-lock.json`; `Install dependencies` executa `npm ci`.
+
 O gatilho é `push` nas duas famílias de branch, e **não** o evento de Pull
 Request: incluí-lo duplicaria toda execução. Um `push` mais recente na mesma
 branch cancela a execução anterior.
 
-Uma branch fora de `feature/**` e `fix/**` não produz verificação alguma.
+Uma branch fora de `feature/**` e `fix/**` não produz execução do CI.
+O SAST ainda pode executar em um Pull Request para `main`.
 Combinada com as verificações obrigatórias da `main`, essa ausência **é o portão
 de nomenclatura de branch**: o Pull Request fica em "aguardando reporte" até a
 branch ser renomeada. É intencional, e não se corrige afrouxando o gatilho.
@@ -151,9 +160,11 @@ compatibilidade.
 `terraform fmt`, `terraform init -backend=false` e `terraform validate` executam
 sempre, sem credenciais: fontes de dados não são avaliadas nessas etapas.
 
-A prévia é tentada apenas quando as credenciais do ambiente são válidas. Com o
-laboratório desligado, ela é pulada, o resumo da execução registra o fato, e o
-job **aprova**. Uma prévia que execute e falhe reprova.
+A prévia executa somente se `Configure AWS Credentials` concluir com sucesso.
+A falha desse step é tolerada e produz a nota de skip; um laboratório
+indisponível depois da autenticação pode falhar no init/plan e reprovar o job.
+As validações estáticas e a construção do pacote precisam passar em ambos
+os casos.
 
 O job constrói o pacote antes da prévia, no próprio job: a configuração declara
 uma fonte de dados sobre o diretório de saída da construção, e jobs não
@@ -175,6 +186,11 @@ terminando no Quality Gate](diagrams/sast-workflow.png)
 Workflow próprio, com ciclo de gatilho próprio: o plano de análise da solução
 cobre a branch principal e Pull Requests, não branches de trabalho.
 
+O SAST dispara nos eventos `opened`, `synchronize` e `reopened` de PRs para
+`main`, além de pushes em `main`. Usa concorrência
+`sast-${{ github.event.pull_request.number || github.ref }}` com cancelamento
+de execuções obsoletas. Não há `needs` entre CI, SAST e CD.
+
 Sendo separado, uma análise vermelha na `main` não interrompe uma entrega em
 curso; sendo verificação obrigatória, bloqueia o merge.
 
@@ -195,7 +211,7 @@ por branch e interruptor, e os jobs Deploy Lambda (13 steps) e Post-Deploy Gates
 
 ### Portões de entrada
 
-Três condições, nesta ordem:
+Duas condições de entrada e o escopo do job:
 
 1. **A referência é a branch principal.** No disparo manual a referência é a
    branch escolhida por quem dispara. A condição está no job, e é ela que carrega
@@ -203,9 +219,7 @@ Três condições, nesta ordem:
 2. **O interruptor `ENABLE_DEPLOY` está ligado**, ou a execução é manual. O
    disparo manual ignora o interruptor de propósito: é o caminho de ligar o
    ambiente sob demanda. Uma execução pulada pelo interruptor **não é falha**.
-3. **O environment `production` aceita a branch.** A sua política de branch de
-   implantação declara a mesma restrição do item 1. É defesa em profundidade:
-   protege se o workflow for editado depois.
+3. **O job usa o environment `production`.** É o escopo da chave de assinatura.
 
 ### Enfileiramento
 
@@ -250,11 +264,11 @@ falha.
 | 6 | Configure AWS Credentials | Configura access key, secret key e session token da mesma sessão AWS, em us-east-1. |
 | 7 | Terraform Init | Executa `terraform init -no-color`, instalando providers e configurando o backend S3 real. |
 | 8 | Terraform Validate | Executa `terraform validate -no-color`; inconsistência de configuração reprova o job. |
-| 9 | Terraform Plan | Executa `terraform plan -no-color`; consulta providers e states necessários e mostra as alterações. |
-| 10 | Terraform Apply | Empacota `app/dist` e aplica a função e integrações; publica a versão configurada. Não aplica plano salvo. |
+| 9 | Terraform Plan | Executa `terraform plan -no-color` com `TF_VAR_service_version=github.sha`, coleta opcional e chave Datadog; consulta os três states e mostra as alterações. |
+| 10 | Terraform Apply | Usa os mesmos `TF_VAR_*`, empacota `app/dist` e aplica a função e a permissão; `publish=true` registra versões quando há mudança versionável. Não aplica plano salvo. |
 | 11 | Read stack outputs | Lê nome/versão da função, ARN do segredo e endpoint público; publica as saídas usadas pelos steps e pelo job pós-deploy. |
 | 12 | Write the signing key value idempotently | Grava o material no Secrets Manager com identificador derivado do hash; mesma chave reutiliza a versão existente. |
-| 13 | Record the deployment in the job summary | Registra no resumo commit, função, caminho público e estado da entrega. Executa com `if: always()`, inclusive depois de falha; o resumo não transforma uma falha em sucesso. |
+| 13 | Record the deployment in the job summary | Registra no resumo commit, função, versão publicada e estado da coleta. Executa com `if: always()`, inclusive depois de falha; o resumo não transforma uma falha em sucesso. |
 
 #### `Post-Deploy Gates`
 
@@ -294,6 +308,10 @@ Os dois vivem no job `Post-Deploy Gates`, depois de a entrega concluir.
 é a autorização de invocação concedida ao API Gateway. Sem ela a rota responde erro de
 integração com a função existindo e saudável — exatamente o estado que esta
 esteira existe para encerrar.
+
+Os gates exercitam a inicialização e a recusa de credencial. Um `401` não
+exercita a assinatura de um JWT novo nem comprova sua aceitação pela API;
+esse fluxo positivo exige um cliente de teste com vínculo ativo.
 
 O endereço vem do output do state remoto da stack do API Gateway, e não é digitado. A
 rota não declara autorizador próprio, então uma recusa de credencial ali só pode
@@ -376,9 +394,8 @@ criaria um segundo lugar para expirar.
 
 ### Passos manuais, sem automação
 
-1. Criar o environment `production` **com política de branch de implantação
-   restrita à `main`**. Sem regra, o environment é escopo de segredo, não
-   proteção.
+1. Criar o environment `production` para a chave de assinatura. Uma branch
+   policy restrita a `main` é opcional; o gate obrigatório já está no job.
 2. Carregar `CUSTOMER_JWT_PRIVATE_KEY` como segredo do environment, a partir do
    arquivo local. O cofre do provedor não faz parte do repositório: a regra de
    exclusão do controle de versão é irrelevante para ele.
@@ -501,7 +518,10 @@ O ruleset da `main` recusa `push` direto, recusa reescrita de histórico, recusa
 exclusão e exige Pull Request. Nenhum ator é autorizado a burlar, administradores
 inclusive.
 
-As verificações obrigatórias são as seis de validação mais a análise estática:
+Os checks produzidos são os seis de validação e o SAST. `Terraform Validation`
+combina verificações estáticas e `plan` dependente do lab; mantê-lo fora dos
+required checks evita bloquear PRs por indisponibilidade cloud. A seleção
+externa do ruleset deve ser conferida em Settings; ela não é declarada no YAML:
 
 ```
 Lint · Type Check · Unit Tests · E2E Tests · Package · Terraform Validation · SAST

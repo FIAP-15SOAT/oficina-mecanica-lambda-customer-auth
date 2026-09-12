@@ -13,8 +13,8 @@
 | Exposição | pública, sem autenticação prévia |
 | Tamanho máximo do corpo | 4096 bytes |
 
-A função serve **um único caminho e um único método**. O roteamento, o
-autorizador e a limitação de frequência são responsabilidade do gateway: a
+A função serve **um único caminho e um único método**. O roteamento e a limitação de frequência são responsabilidade do gateway,
+que não declara authorizer nesta rota de login: a
 função não repete essas checagens, e por isso não recusa por método nem por
 `Content-Type`.
 
@@ -45,7 +45,7 @@ Campos adicionais no corpo são ignorados.
 ```json
 {
   "data": {
-    "accessToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6ImN1c3RvbWVyLWF1dGgtMjAyNi0wOCJ9...",
+    "accessToken": "<JWT RS256 emitido pela função>",
     "expiresIn": 3600
   }
 }

@@ -15,12 +15,14 @@ o cliente da nuvem sequer é instanciado.
 ## Primeiro uso
 
 ```bash
+# Instalar as dependências na pasta da aplicação
 cd app
 npm ci
+# Criar a configuração local a partir dos exemplos
 cp .env.example .env
 ```
 
-O `.env.example` cobre todas as variáveis com valores de exemplo. Falta apenas a
+O `.env.example` cobre as variáveis locais com valores de exemplo. Falta apenas a
 chave privada de assinatura. Gere um par só seu:
 
 ```bash
@@ -172,7 +174,7 @@ A resposta é o envelope de [Contrato](contracts.md#resposta-de-sucesso), com
 ### 5. Chamar a API com o token emitido
 
 ```bash
-TOKEN=<data.accessToken>
+TOKEN="<data.accessToken>"
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/me
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/me/work-orders
 ```
@@ -185,7 +187,7 @@ completa de rotas está no README da API.
 
 > **Se o login funciona aqui e a API devolve `401`,** a causa quase certa é
 > `CUSTOMER_JWT_PUBLIC_KEY` não corresponder à privada usada na assinatura. A API
-> **sobe normalmente** com uma chave que não confere, e o token externo é
+> **sobe normalmente** com uma chave pública válida que não corresponde à privada, e o token externo é
 > recusado com o mesmo `401` de uma credencial inválida. Emissor e audiência
 > divergentes produzem exatamente o mesmo sintoma.
 
@@ -196,7 +198,7 @@ npm run build       # dist/handler.js + dist/handler.js.map
 ```
 
 O empacotamento em `.zip` não acontece aqui: quem monta o artefato publicável é
-o `archive_file` da stack em [`terraform/`](../terraform/), a partir de `dist/`,
+o `archive_file` da stack em [`infra/`](../infra/), a partir de `dist/`,
 no momento da aplicação. Uma única fonte de verdade para o conteúdo e para o
 identificador de conteúdo — ver
 [ADR 0004](adr/0004-empacotamento-e-publicacao.md).

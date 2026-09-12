@@ -132,15 +132,15 @@ jobs:
 
       - name: Terraform Fmt Check
         run: terraform fmt -check -recursive
-        working-directory: terraform
+        working-directory: infra
 
       - name: Terraform Init Lambda Customer Auth
         run: terraform init -backend=false -no-color
-        working-directory: terraform
+        working-directory: infra
 
       - name: Terraform Validate Lambda Customer Auth
         run: terraform validate -no-color
-        working-directory: terraform
+        working-directory: infra
 
       - uses: ./.github/actions/setup-ci
 
@@ -160,7 +160,7 @@ jobs:
 
       - name: Terraform Plan Lambda Customer Auth
         if: steps.aws_creds.outcome == 'success'
-        working-directory: terraform
+        working-directory: infra
         run: |
           terraform init -reconfigure -no-color
           terraform plan -no-color

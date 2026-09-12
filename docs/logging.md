@@ -130,7 +130,7 @@ observabilidade; o componente é quem emite o campo, e portanto onde mexer.
 | --- | --- | --- | --- | --- |
 | `oficina.event.name` | string | baixa | catálogos de evento | clear |
 | `oficina.auth.subject.id` | string | alta | caso de uso | identifier |
-| `oficina.auth.failure.reason` | string | baixa | caso de uso / API Gateway | clear |
+| `oficina.auth.failure.reason` | string | baixa | caso de uso / handler | clear |
 | `oficina.auth.subject.cpf_masked` | string | alta | caso de uso | **pii** |
 
 Em runtime, o que o código precisa é o nome declarado — que decide o descarte em
@@ -148,7 +148,7 @@ um evento adicional.
 | --- | --- | --- | --- |
 | `auth.customer.authentication.succeeded` | info | `subjectId`, `maskedCpf` | caso de uso |
 | `auth.customer.authentication.failed` | warn | `failureReason`, `maskedCpf`, `subjectId?` | caso de uso |
-| `auth.customer.input.rejected` | warn | `failureReason` | caso de uso (CPF) / API Gateway (transporte) |
+| `auth.customer.input.rejected` | warn | `failureReason` | caso de uso (CPF) / handler (transporte) |
 | `db.query.failed` | error | — (`exception.*`) | ponto de entrada |
 | `auth.customer.token.signing.failed` | error | — (`exception.*`) | ponto de entrada |
 | `app.configuration.invalid` | error | — (`exception.*`) | composição |
@@ -180,8 +180,8 @@ nível de erro, com `error.type` e `exception.*`.
 
 ## Correlação
 
-`request.id` — **o mesmo nome que a API usa**, porque é a chave de junção entre
-os dois serviços.
+`request.id` — **o mesmo nome que a API usa**, porque permite a junção com o Gateway quando o ID recebido é aceito.
+O login na Lambda e a requisição posterior à API são atendimentos distintos.
 
 O valor vem do cabeçalho `x-request-id` ou `x-correlation-id` quando há um
 válido (alfanumérico com `.`, `_`, `:`, `-`, até 128 caracteres, e que sobrevive
@@ -193,7 +193,7 @@ exceção, porque não pertencem a invocação alguma.
 
 ## Inicialização a frio
 
-`faas.coldstart` é **campo presente em todas as linhas**, e não um evento
+`faas.coldstart` é **campo presente nas linhas do logger de invocação**, e não um evento
 separado. A razão é prática: fatiar a latência por essa condição não pode exigir
 uma segunda consulta correlacionada. A primeira invocação de um ambiente marca
 `true` em todas as suas linhas; as seguintes marcam `false`.
@@ -254,7 +254,7 @@ diferença tem razão:
 | --- | --- | --- |
 | `host.name`, `process.pid`, `service.instance.id` | **Não emitidos** | Sem sentido em ambiente efêmero; `faas.*` cumpre o papel |
 | `http.route`, `url.path`, `url.query`, `url.scheme` | **Não emitidos** | O roteamento é do gateway e a função serve um caminho só |
-| `client.address` | **Não emitido** | Endereço do chamador é do gateway; aqui só chegaria o do próprio gateway |
+| `client.address` | **Não emitido** | Endereço do chamador é do gateway; o payload 2.0 contém `requestContext.http.sourceIp`, mas o dicionário local não o publica |
 | `user.id`, `user.roles` | **Não emitidos** | O chamador é anônimo por definição — este é o endpoint de login |
 | `oficina.auth.subject.name`, `.email` | **Não emitidos** | A consulta sequer os recupera; não buscar é melhor que mascarar |
 | `http.request.header.*` | **Não emitidos** | Nenhum deles participa de diagnóstico aqui |

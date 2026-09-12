@@ -36,7 +36,7 @@ As dependências de código-fonte apontam **somente para dentro**.
 
 ### Um anel de adaptadores, não dois
 
-A API principal mantém dois anéis — um livre de framework e outro que é o API Gateway
+A API principal mantém dois anéis — um livre de framework e outro que é a fronteira de adaptação
 do framework. O segundo existe **porque o framework exige**. Aqui não há
 framework: um anel cumpre o papel, e a tradução do formato de evento e de
 resposta fica confinada a `infrastructure/serverless/`.
@@ -46,7 +46,7 @@ resposta fica confinada a `infrastructure/serverless/`.
 `eslint.config.mjs` proíbe `domain/` e `application/` de importarem
 `aws-lambda`, `pg`, `jose`, `bcryptjs`, `pino`, `@aws-sdk/*` e módulos de
 `@infrastructure`/`@interface-adapters`. Uma segunda regra permite `aws-lambda`
-apenas em `src/infrastructure/serverless/` e em `src/handler.ts`, que é o API Gateway
+apenas em `src/infrastructure/serverless/` e em `src/handler.ts`, que é a fronteira de entrada
 da plataforma por definição. Violação **falha** a verificação — não emite aviso.
 
 Trocar a versão da carga de evento do gateway alcança o validador de evento e o
@@ -95,8 +95,10 @@ getDependencies()  ─┬─ já resolvido? devolve a mesma promessa
 
 **O aquecimento é início, não barreira.** O módulo do ponto de entrada é
 carregado na fase de Init, que recebe CPU cheia e, sob concorrência provisionada,
-acontece antes de qualquer tráfego — começar ali faz a primeira credencial real
-não pagar segredos, PEM e handshake. O que ele deliberadamente **não** faz é
+acontece antes de qualquer tráfego. Começar ali antecipa a leitura dos segredos
+e a importação do PEM, mas a invocação ainda aguarda a promessa se a composição
+não tiver terminado. A conexão com o banco é preguiçosa e o handshake permanece
+na primeira consulta; esta stack não declara concorrência provisionada. O que ele deliberadamente **não** faz é
 abortar o ambiente: uma configuração inválida precisa chegar ao cliente no
 envelope de erro documentado, e uma falha de Init entregaria um erro de
 plataforma, que não está no contrato. Fora da plataforma o aquecimento é inerte,
@@ -127,7 +129,7 @@ evento do gateway
   ├─ getDependencies()   (memoizado; aquecido no Init) ── falha → 500 documentado
   ├─ timings.reset()
   │
-  ├─ translateRequest(evento)  ── recusa → evento de entrada inválida → 400
+  ├─ validateLoginEvent(evento)  ── recusa → evento de entrada inválida → 400
   │      │ ok
   │      ▼
   │  controller.login({ cpf, password })
@@ -147,7 +149,7 @@ evento do gateway
 
 **No máximo duas linhas por invocação:** a do atendimento, sempre, e no máximo
 um evento adicional. Quem conhece a causa é quem a registra — o caso de uso
-registra o que julga, o API Gateway registra o que recusa antes de o caso de uso
+registra o que julga, o handler registra o que recusa antes de o caso de uso
 existir, e o ponto de entrada registra as duas falhas de mecanismo. Não há
 caminho em que dois eventos sejam emitidos.
 
@@ -191,7 +193,7 @@ falha de formas visíveis ao cliente.
 │   ├── events/                    evento versionado para invocação avulsa
 │   └── package.json  tsconfig.json  jest*.config.ts  eslint.config.mjs  sonar-project.properties
 ├── docs/                    esta documentação e os ADRs
-├── terraform/               a stack da função: rede, log, segredo, autorização
+├── infra/                   a stack da função: rede, log, segredo, autorização
 └── .github/                 workflows de validação, análise estática e entrega
 ```
 
@@ -230,13 +232,16 @@ segurança próprio, porque o banco não é publicamente acessível e aceita ape
 origens da faixa da rede. O grupo não declara ingresso — nada conecta na função,
 que é invocada por chamada de serviço — e libera o egresso.
 
-**Interface anexada.** Estar na rede significa que a plataforma cria uma
-interface de rede para o ambiente de execução. É o item mais caro da partida a
-frio, e o que torna o reaproveitamento do ambiente valioso.
+**Interface anexada.** A Lambda usa ENIs Hyperplane associadas à combinação de
+subnets e security groups, que podem ser compartilhadas por ambientes e funções.
+A criação inicial e a preparação da rede podem atrasar a disponibilidade da
+função; não há uma ENI nova obrigatoriamente criada a cada partida a frio nem
+medição local que atribua a elas o maior custo. Ver [AWS › Acesso a VPC](https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html).
 
 **Partida a frio e antecipação da composição.** O ponto de entrada dispara a
 composição durante a **inicialização do ambiente**, não na primeira invocação:
-sem isso, a primeira credencial real pagaria a interface de rede, a leitura dos
+isso antecipa a leitura dos dois segredos e a importação do PEM, sem controlar
+a criação das ENIs nem garantir que a composição termine antes da invocação. Sem isso, a primeira credencial real pagaria a interface de rede, a leitura dos
 dois segredos e a importação do PEM.
 
 O handshake do banco fica deliberadamente de fora dessa antecipação: o pool é
@@ -245,11 +250,12 @@ um banco indisponível derrubar a inicialização inteira, trocando o `503` corr
 por um `500`.
 
 **Concorrência.** A concorrência reservada limita quantos ambientes existem ao
-mesmo tempo, e portanto quantas conexões a função mantém contra o banco
-compartilhado — ver [Banco de dados](database.md#orcamento-de-conexoes).
+mesmo tempo, reduzindo a pressão das consultas sobre o banco
+compartilhado — ver [Banco de dados](database.md#orçamento-de-conexões).
 
-**Uma versão imutável por implantação**, sem apelido: o API Gateway constrói o endereço
-de invocação sem qualificador. Detalhes em
+**Publicação de versão ligada**, sem alias: o API Gateway constrói o endereço
+de invocação sem qualificador e executa `$LATEST`, não a versão numerada
+registrada no output. Detalhes em
 [ADR 0004](adr/0004-empacotamento-e-publicacao.md) e
 [Infraestrutura](terraform.md).
 
@@ -265,7 +271,6 @@ de invocação sem qualificador. Detalhes em
 | Envelope e dicionário de log | **Idênticos** | É o que faz uma consulta cobrir os dois serviços — as diferenças de conteúdo estão em [Logging](logging.md) |
 
 O modelo de identidade que esta função lê — `users.cpf`, `user_customers` e
-`customers.is_active` — é definido e mantido pela API principal. O racional está
-no ADR de autenticação de clientes daquele repositório
-(`docs/adr/0004-autenticacao-de-clientes.md`, em `oficina-mecanica-api`).
+`customers.is_active` — é definido e mantido pela API principal. O contrato está
+em [API › Identidade externa e autorização por vínculo](https://github.com/FIAP-15SOAT/oficina-mecanica-api/blob/main/docs/architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo).
 Este repositório **lê** esse modelo e não o define.

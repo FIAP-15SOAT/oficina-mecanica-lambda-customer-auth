@@ -81,14 +81,14 @@ jobs:
 
       - name: Terraform Init
         run: terraform init -no-color
-        working-directory: terraform
+        working-directory: infra
 
       - name: Terraform Validate
         run: terraform validate -no-color
-        working-directory: terraform
+        working-directory: infra
 
       - name: Terraform Plan
-        working-directory: terraform
+        working-directory: infra
         env:
           TF_VAR_service_version: ${{ github.sha }}
           TF_VAR_enable_telemetry_collection: ${{ vars.ENABLE_TELEMETRY_COLLECTION == 'true' }}
@@ -96,7 +96,7 @@ jobs:
         run: terraform plan -no-color
 
       - name: Terraform Apply
-        working-directory: terraform
+        working-directory: infra
         env:
           TF_VAR_service_version: ${{ github.sha }}
           TF_VAR_enable_telemetry_collection: ${{ vars.ENABLE_TELEMETRY_COLLECTION == 'true' }}
@@ -105,7 +105,7 @@ jobs:
 
       - name: Read stack outputs
         id: tf
-        working-directory: terraform
+        working-directory: infra
         run: |
           set -euo pipefail
           {

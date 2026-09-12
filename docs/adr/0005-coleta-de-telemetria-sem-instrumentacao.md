@@ -21,7 +21,8 @@ Duas restrições decidem quase tudo:
 1. **O laboratório não permite criar roles.** Está registrado no ADR 0001 do
    repositório de Kubernetes e materializado no padrão de variável de repositório
    que alimenta os nomes de role pré-existentes.
-2. **A função é uma folha:** não chama outro serviço. As durações que um trace
+2. **A função é uma folha no fluxo de aplicação:** não chama a API nem
+   outra função, embora consulte PostgreSQL e Secrets Manager. As durações que um trace
    distribuído produziria já constam da linha de invocação.
 
 O critério vem do próprio ADR de telemetria da API: *a lacuna dominante não é
@@ -44,9 +45,9 @@ separado traduz para o destino: **o fornecedor vive na coleta, nunca no código*
 
 | Abordagem | Trace | Métrica própria | Log | Código muda? | Partida a frio | Viável no laboratório |
 | --- | --- | --- | --- | --- | --- | --- |
-| **Extensão sozinha** | inferido | via extensão | ✅ | **não** | ~100–200 ms de inicialização, com envio após a resposta | ✅ |
+| **Extensão sozinha (configuração atual)** | desligado (`DD_TRACE_ENABLED=false`) | métricas de plataforma via extensão | ✅ | **não** | requer medição; envio pode ocorrer após a resposta | ✅ |
 | Extensão + biblioteca do fornecedor + invólucro | completo | ✅ | ✅ | **o ponto de entrada passa a ser o do fornecedor** | maior | ✅ |
-| Extensão + kit neutro exportando para a extensão | ✅ | ❌ não suportado por essa via | ✅ | preload e três campos novos no dicionário | +200–800 ms | ✅ |
+| Extensão + kit neutro exportando para a extensão | ✅ | ❌ não suportado por essa via | ✅ | preload e três campos novos no dicionário | requer medição | ✅ |
 | Coletor neutro gerenciado pela nuvem | ✅ | ✅ | — | kit + configuração do coletor | o maior | ✅ |
 | Integração de conta puxando métricas e logs | — | ✅ | ✅ | não | zero | ❌ **exige criar role** |
 | Encaminhador de logs por função dedicada | — | — | ✅ | não | zero | ❌ **a pilha cria roles** |
@@ -79,14 +80,14 @@ confirmar que a função aparece no destino depois de uma invocação. Um
 provisionamento verde não prova nada, e a ausência da função no destino é falha
 **da coleta**, distinta de falha da função.
 
-**Gatilho para reabrir.** Se a função passar a chamar outro serviço — deixando de
-ser folha —, a terceira linha da tabela passa a se pagar, e a decisão volta à
-mesa.
+**Gatilho para reabrir.** Se precisar de spans das chamadas ao banco e aos
+segredos ou passar a encadear serviços de aplicação, comparar os sinais
+necessários com overhead medido e custo de ingestão antes de adotar um SDK.
 
 ## Referências
 
 - [Observabilidade](../observability.md)
 - [Logging](../logging.md)
-- [Infraestrutura › Variáveis de ambiente da função](../terraform.md#variaveis-de-ambiente-da-funcao)
+- [Infraestrutura › Variáveis de ambiente da função](../terraform.md#variáveis-de-ambiente-da-função)
 - ADR de telemetria da API (`docs/adr/0005-opentelemetry.md`, em
   `oficina-mecanica-api`) — o critério de que a lacuna dominante é coleta
