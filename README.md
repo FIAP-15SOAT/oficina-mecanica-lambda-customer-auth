@@ -113,6 +113,33 @@ Todos rodam a partir de `app/`.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run format` | Aplica a formatação |
 
+## 📁 Estrutura do Repositório
+
+```text
+.
+├── .github/workflows/           # CI, SAST e CD da função
+├── app/
+│   ├── src/
+│   │   ├── domain/              # Entidades, contratos e regras de domínio
+│   │   ├── application/         # Casos de uso e portas
+│   │   ├── interface-adapters/  # Controller e apresentação do login
+│   │   └── infrastructure/      # Handler, banco, JWT, logging e telemetria
+│   ├── test/                    # Testes unitários e E2E
+│   ├── events/                  # Eventos para execução local
+│   ├── scripts/                 # Scripts de apoio à aplicação
+│   ├── .env.example            # Referência de configuração local
+│   └── package.json            # Dependências e comandos npm
+├── docs/
+│   ├── adr/                    # Decisões arquiteturais
+│   ├── diagrams/               # PNGs renderizados na documentação
+│   ├── architecture.md         # Arquitetura e fluxo de autenticação
+│   ├── ci-cd.md                # Workflows, jobs, steps e configuração GitHub
+│   └── terraform.md            # Recursos, inputs, outputs e aplicação local
+├── terraform/                  # Função AWS Lambda e integrações
+├── .gitignore
+└── README.md
+```
+
 ## 📚 Documentação
 
 | Documento | Conteúdo |
