@@ -269,7 +269,7 @@ diferença tem razão:
 
 O subsistema de redação, o serializador de erro, o normalizador de registro e o
 registro de campos são **cópia deliberada e limitada** da API
-(`oficina-mecanica-app`, `app/src/infrastructure/logging/`). A procedência é
+(`oficina-mecanica-api`, `app/src/infrastructure/logging/`). A procedência é
 registrada **aqui**, e não em cabeçalho de cada arquivo: repetir o bloco em cinco
 arquivos poluía o código sem acrescentar informação que este parágrafo não dê.
 

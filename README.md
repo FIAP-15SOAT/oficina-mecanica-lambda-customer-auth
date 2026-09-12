@@ -138,11 +138,11 @@ Todos rodam a partir de `app/`.
 
 | Repositório | Papel | Relação com esta função |
 | --- | --- | --- |
-| `oficina-mecanica-app` | API principal (NestJS) | **Dona do schema** e da identidade. Verifica o token emitido aqui, com uma estratégia separada da interna. Sua imagem é usada como migrador do banco local e de teste |
+| `oficina-mecanica-api` | API principal (NestJS) | **Dona do schema** e da identidade. Verifica o token emitido aqui, com uma estratégia separada da interna. Sua imagem é usada como migrador do banco local e de teste |
 | `oficina-mecanica-infra-base` | Rede | Dona da VPC e das subnets privadas às quais esta função é anexada |
-| `oficina-mecanica-database` | Banco | Dono da instância e da credencial. Expõe endereço, porta, nome e o identificador do segredo por output |
-| `oficina-mecanica-gateway` | API Gateway | Publica `POST /customer-auth/login` e consome [`docs/contracts.md`](docs/contracts.md). Esta stack concede a autorização de invocação |
-| `oficina-mecanica-k8s` | Cluster | Executa a API principal. Não participa desta função |
+| `oficina-mecanica-infra-database` | Banco | Dono da instância e da credencial. Expõe endereço, porta, nome e o identificador do segredo por output |
+| `oficina-mecanica-api-gateway` | API Gateway | Publica `POST /customer-auth/login` e consome [`docs/contracts.md`](docs/contracts.md). Esta stack concede a autorização de invocação |
+| `oficina-mecanica-infra-k8s` | Cluster | Executa a API principal. Não participa desta função |
 | **`oficina-mecanica-lambda-customer-auth`** | **Esta função** | Emite o token externo, e é dona da própria stack de infraestrutura |
 
 O modelo de identidade — `users.cpf`, `user_customers`, `customers.is_active` —

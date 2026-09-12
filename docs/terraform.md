@@ -21,9 +21,9 @@ retenção de 14 dias](diagrams/infrastructure.png)
 | Grupo de log da função | **este repositório** | Sem declaração, a plataforma o cria com retenção indefinida |
 | Contêiner do segredo da chave privada de assinatura | **este repositório** | O material é da função; o **valor** é escrito pela entrega |
 | Rede, subnets, gateway de tradução | `oficina-mecanica-infra-base` | Consumido por leitura de state remoto |
-| Banco, seu grupo de segurança e o segredo da credencial | `oficina-mecanica-database` | Quem é dono do recurso é dono da credencial |
-| API Gateway, rota e limitação de frequência | `oficina-mecanica-gateway` | A rota é publicada lá; esta stack apenas autoriza a invocação |
-| Cluster, registro de imagens e balanceador | `oficina-mecanica-k8s` | Não participa desta função |
+| Banco, seu grupo de segurança e o segredo da credencial | `oficina-mecanica-infra-database` | Quem é dono do recurso é dono da credencial |
+| API Gateway, rota e limitação de frequência | `oficina-mecanica-api-gateway` | A rota é publicada lá; esta stack apenas autoriza a invocação |
+| Cluster, registro de imagens e balanceador | `oficina-mecanica-infra-k8s` | Não participa desta função |
 | Bucket do state | compartilhado, pré-existente | Já existe e serve as cinco stacks. **Esta acrescenta apenas uma chave** |
 | Qualquer role de identidade | **ninguém** — o laboratório não permite criar roles | A role de execução é lida por fonte de dados, nunca criada |
 

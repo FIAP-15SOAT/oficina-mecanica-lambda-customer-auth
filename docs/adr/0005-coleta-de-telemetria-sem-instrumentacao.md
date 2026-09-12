@@ -89,4 +89,4 @@ mesa.
 - [Logging](../logging.md)
 - [Infraestrutura › Variáveis de ambiente da função](../terraform.md#variaveis-de-ambiente-da-funcao)
 - ADR de telemetria da API (`docs/adr/0005-opentelemetry.md`, em
-  `oficina-mecanica-app`) — o critério de que a lacuna dominante é coleta
+  `oficina-mecanica-api`) — o critério de que a lacuna dominante é coleta

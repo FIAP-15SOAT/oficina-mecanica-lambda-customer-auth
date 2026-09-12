@@ -7,7 +7,7 @@ A função é **somente leitura** e **não é dona do schema**.
 Este repositório **não contém** definição de schema, migration ou qualquer DDL —
 nem em código de produção, nem em código de teste. As tabelas `users`,
 `user_customers` e `customers` são mantidas pela API principal
-(`oficina-mecanica-app`), e qualquer necessidade de alteração é endereçada
+(`oficina-mecanica-api`), e qualquer necessidade de alteração é endereçada
 naquele repositório.
 
 Onde um banco com o schema real é necessário — desenvolvimento local e a suíte

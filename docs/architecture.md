@@ -267,5 +267,5 @@ de invocação sem qualificador. Detalhes em
 O modelo de identidade que esta função lê — `users.cpf`, `user_customers` e
 `customers.is_active` — é definido e mantido pela API principal. O racional está
 no ADR de autenticação de clientes daquele repositório
-(`docs/adr/0004-autenticacao-de-clientes.md`, em `oficina-mecanica-app`).
+(`docs/adr/0004-autenticacao-de-clientes.md`, em `oficina-mecanica-api`).
 Este repositório **lê** esse modelo e não o define.
