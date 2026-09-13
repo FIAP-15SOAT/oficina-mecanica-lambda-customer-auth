@@ -17,7 +17,7 @@ const SECRET_PATTERNS: readonly NamedPattern[] = [
   },
   {
     name: 'auth-scheme',
-    pattern: /\b(?:Bearer|Basic|Digest|Token|ApiKey)\s+[A-Za-z0-9._~+/=-]{8,}/gi,
+    pattern: /\b(?:Bearer|Basic|Digest|Token|ApiKey)\s+[a-z0-9._~+/=-]{8,}/gi,
   },
   // URL com usuário:senha embutidos — o caso concreto é o DATABASE_URL
   // (`postgresql://user:senha@host/db`) aparecendo num erro do Prisma.

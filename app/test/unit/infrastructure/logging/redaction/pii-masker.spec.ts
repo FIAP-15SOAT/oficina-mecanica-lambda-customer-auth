@@ -25,6 +25,40 @@ describe('maskScalar', () => {
     expect(maskScalar('maria.silva@gmail.com')).toBe('ma***va@gmail.com');
   });
 
+  it.each(['b.c', 'sub.example.com', 'b..c', 'b.c.', '...', '.b.c', 'domínio.br', '😀.😀'])(
+    'should preserve the existing e-mail shape policy for domain "%s"',
+    (domain) => {
+      expect(maskScalar(`maria.silva@${domain}`)).toBe(`ma***va@${domain}`);
+    },
+  );
+
+  it.each([
+    ['@example.com', '@e***om'],
+    ['maria.silva@example', 'ma***le'],
+    ['maria.silva@.bc', 'ma***bc'],
+    ['maria.silva@bc.', 'ma***c.'],
+    ['maria.silva@..', 'ma***..'],
+    ['maria.silva@@example.com', 'ma***om'],
+    ['maria.silva@b c.com', 'ma***om'],
+    [' maria.silva@example.com', ' m***om'],
+    ['maria.silva@example.com\n', 'ma***m\n'],
+    ['maria.silva@example.com\u00a0', 'ma***m\u00a0'],
+  ])('should use free-text masking for the invalid e-mail shape %p', (value, masked) => {
+    expect(maskScalar(value)).toBe(masked);
+  });
+
+  it('should mask an invalid dotted domain without expensive backtracking', () => {
+    const value = `maria@${'.'.repeat(32768)} `;
+    const startedAt = process.hrtime.bigint();
+
+    const masked = maskScalar(value);
+
+    const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+
+    expect(masked).toBe('ma***. ');
+    expect(elapsedMs).toBeLessThan(150);
+  });
+
   it('should reveal a single leading character between four and six characters', () => {
     expect(maskScalar('Lucas')).toBe('L***');
     expect(maskScalar('Ana2')).toBe('A***');

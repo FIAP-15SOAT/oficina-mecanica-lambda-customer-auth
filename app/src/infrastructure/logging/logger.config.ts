@@ -35,7 +35,7 @@ export function resolveLoggerConfig(env: NodeJS.ProcessEnv = process.env): Logge
 function withDefault(value: string | undefined, defaultValue: string): string {
   const trimmed = value?.trim();
 
-  return trimmed ? trimmed : defaultValue;
+  return trimmed || defaultValue;
 }
 
 function resolveLevel(value: string | undefined): LogLevel {
