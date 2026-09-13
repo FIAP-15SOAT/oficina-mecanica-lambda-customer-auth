@@ -155,18 +155,16 @@ vem do secret de organização e é passada ao environment da função no Terraf
 
 ## O contrato de output da credencial do banco
 
-Esta stack consome o **output**, nunca um nome fixo. Três propriedades — todas
-verificáveis — tornam gratuita a troca de implementação a montante, de segredo
-declarado explicitamente para credencial gerenciada pelo próprio serviço de
-banco:
+Esta stack consome o **output**, nunca um nome fixo. O RDS gera e mantém a master
+password e possui o Secret no Secrets Manager; o database publica o ARN em
+`db_credentials_secret_arn`. Três propriedades preservam a integração:
 
 1. **O nome do output é o contrato**, e o identificador do segredo é opaco. A
-   stack de banco pode trocar o valor de `db_credentials_secret_arn` de um
-   segredo declarado para o identificador de um segredo gerenciado — cujo nome é
-   gerado e não pode ser escolhido — sem que nada aqui mude.
+   stack de banco publica o ARN calculado do Secret gerenciado — cujo nome é
+   gerado e não pode ser escolhido — sem exigir mudança no código consumidor.
 2. **A forma do conteúdo é a mesma**: campos `username` e `password`, com campos
-   adicionais tolerados pelo leitor. A credencial gerenciada acrescenta campos de
-   motor, endereço, porta e nome do banco; o leitor os ignora.
+   adicionais tolerados pelo leitor. Se o JSON incluir outros metadados, o
+   leitor os ignora; eles não são exigidos nem usados para a conexão.
 3. **O modelo de cifração é o mesmo**: chave gerenciada padrão do serviço de
    segredos, de modo que a permissão de decifração seja idêntica nas duas
    implementações.
@@ -174,9 +172,13 @@ banco:
 Endereço, porta e nome do banco continuam vindo dos outputs que a stack de banco
 já expõe, e **não** do segredo — assim a origem desses três não muda junto.
 
-No plano de execução, a promessa é fechada pelo descarte da composição memoizada
-quando o banco recusa autenticação: a invocação seguinte relê o segredo, e um
-ambiente já aquecido não fica inutilizável até ser reciclado.
+A rotação automática é desabilitada explicitamente pelo database. O descarte
+atual da composição após recusa de autenticação continua inalterado, mas não
+constitui suporte a rotação coordenada; refresh/retry/encerramento de pool exigem
+outra change.
+O State do database contém somente referências/metadados, não a senha; esta
+stack também recebe somente o ARN, e o valor é recuperado pelo runtime.
+Veja o [ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
 
 ## A chave privada não transita pelo state
 
@@ -188,9 +190,10 @@ Declarar o valor na infraestrutura o colocaria em texto puro no state, num bucke
 compartilhado pelas seis stacks Terraform. Quem tem a chave privada emite token para
 qualquer cliente: é o material mais sensível da solução.
 
-É uma divergência deliberada da postura da stack de banco quanto à senha do
-banco, e o custo é que um ambiente novo só fica funcional depois de a entrega
-executar — o que ela faz de qualquer forma.
+Assim como a senha do banco gerenciada pelo RDS, o valor da chave privada não
+entra no State. A diferença é de ownership: o RDS gera a senha, enquanto o CD
+publica o PEM de assinatura. Um ambiente novo só fica funcional depois de a
+entrega executar — o que ela faz de qualquer forma.
 
 ## O artefato
 

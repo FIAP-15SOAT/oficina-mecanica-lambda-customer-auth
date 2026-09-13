@@ -84,18 +84,27 @@ processo inteiro — o oposto exato da autocura que o pool existe para dar.
 
 ## A forma do segredo
 
-`DATABASE_SECRET_ID` aponta para um segredo cujo valor é um **JSON** com
-exatamente os dois campos que o driver consome:
+`DATABASE_SECRET_ID` recebe o ARN de `db_credentials_secret_arn` do database e
+aponta para o Secret gerenciado pelo **RDS**, que gera e mantém a master password.
+Seu valor é um **JSON** com pelo menos os dois campos que o driver consome:
 
 ```json
 { "username": "...", "password": "..." }
 ```
 
-É o formato que o próprio gerenciador de segredos produz para credenciais de
-banco. Qualquer outra forma — texto puro, JSON sem um dos campos, campo com outro
+Campos adicionais são ignorados. A Lambda lê o valor diretamente do Secrets
+Manager; host/porta/banco continuam vindo dos outputs Terraform, não do JSON.
+Qualquer outra forma — texto puro, JSON sem um dos campos, campo com outro
 tipo — falha na composição com `app.configuration.invalid`, e não na primeira
 consulta. Fora de produção, o fallback `DATABASE_SECRET` carrega exatamente o
 mesmo JSON.
+
+A rotação automática permanece explicitamente desabilitada no database. Não há
+mudança de runtime, refresh contínuo, retry ou lifecycle do pool nesta entrega.
+O descarte atual da composição após erro de autenticação não substitui uma
+estratégia de rotação coordenada. Ao destruir o RDS, seu Secret é removido; a
+recriação gera novo ARN, exigindo reaplicar a stack da Lambda após o database.
+Veja o [ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
 
 A chave de assinatura segue regra diferente e está documentada em
 [Segurança › Custódia da chave](security.md#custódia-da-chave): ali o valor do

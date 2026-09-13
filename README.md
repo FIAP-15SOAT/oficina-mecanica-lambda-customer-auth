@@ -77,6 +77,12 @@ portátil.
 
 Nenhuma credencial de nuvem é necessária para desenvolver.
 
+Em produção, o RDS gera e mantém a master password no Secrets Manager, com
+rotação automática desabilitada. A Lambda recebe o ARN pelo output
+`db_credentials_secret_arn` e lê `username`/`password` diretamente, ignorando
+campos adicionais. Não passa pelo CD da API ou pelo Kubernetes Secret. Detalhes em [Banco](docs/database.md#a-forma-do-segredo) e no
+[ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
+
 ## 🚀 Início rápido
 
 ```bash
