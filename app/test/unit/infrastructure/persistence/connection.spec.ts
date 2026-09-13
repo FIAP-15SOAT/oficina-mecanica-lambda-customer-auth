@@ -20,8 +20,16 @@ const ENVIRONMENT = {
 } as Environment;
 
 describe('parseDatabaseCredentials', () => {
-  it('should read the two fields the secret carries', () => {
-    expect(parseDatabaseCredentials(JSON.stringify(CREDENTIALS))).toEqual(CREDENTIALS);
+  it('should read the required fields and ignore RDS-managed metadata', () => {
+    const rdsManagedSecret = {
+      ...CREDENTIALS,
+      engine: 'postgres',
+      host: 'db.internal',
+      port: 5432,
+      dbInstanceIdentifier: 'rds-oficina-mecanica',
+    };
+
+    expect(parseDatabaseCredentials(JSON.stringify(rdsManagedSecret))).toEqual(CREDENTIALS);
   });
 
   it('should reject a secret that is not valid JSON', () => {

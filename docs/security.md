@@ -6,6 +6,25 @@ credencial de cliente trafega.
 
 ## Modelo de ameaças
 
+### Custódia da credencial do banco
+
+A master password é gerada/gerenciada pelo RDS e armazenada no Secrets Manager,
+com rotação automática desabilitada pelo database. Terraform recebe somente
+ARN e metadados, não o valor; `sensitive` apenas ocultaria a apresentação e não
+seria proteção contra State. A Lambda lê o Secret diretamente por
+`DATABASE_SECRET_ID`, sem GitHub password nem Kubernetes como intermediário.
+
+O valor existe também na memória do ambiente da Lambda e na configuração/pool
+do driver. Separadamente, a projeção da API existe na memória/environment do
+runner de CD, no Kubernetes Secret/armazenamento do cluster e nos containers.
+Secrets Manager é a fonte de verdade, não o único local materializado.
+Nenhuma mudança de runtime/pool ou de menor privilégio foi introduzida;
+habilitar rotação exige nova change.
+
+[ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
+
+### Superfícies do login
+
 | Ameaça | Superfície | Mitigação |
 | --- | --- | --- |
 | Enumeração de contas | Resposta de erro do login | Mensagem, status e corpo **idênticos** nas quatro causas de recusa |

@@ -232,6 +232,13 @@ segurança próprio, porque o banco não é publicamente acessível e aceita ape
 origens da faixa da rede. O grupo não declara ingresso — nada conecta na função,
 que é invocada por chamada de serviço — e libera o egresso.
 
+**Credencial do banco.** O RDS gera e mantém a master password em seu Secret
+service-managed. Esta stack recebe apenas o ARN pelo output
+`db_credentials_secret_arn`; a função recupera `username`/`password` diretamente
+do Secrets Manager e ignora campos extras. Não usa a projeção Kubernetes do CD
+da API. Rotação automática permanece desabilitada, sem alteração de refresh,
+retry ou pool. Veja [Banco › Forma do segredo](database.md#a-forma-do-segredo).
+
 **Interface anexada.** A Lambda usa ENIs Hyperplane associadas à combinação de
 subnets e security groups, que podem ser compartilhadas por ambientes e funções.
 A criação inicial e a preparação da rede podem atrasar a disponibilidade da
