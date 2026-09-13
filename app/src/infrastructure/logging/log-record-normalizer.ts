@@ -2,7 +2,7 @@ import { describeError } from './error-serializer';
 import { isDeclaredField } from './field-registry';
 import { reportLoggingFailure } from './logging-diagnostics';
 
-const LIBRARY_ERROR_KEYS = ['err', 'error'];
+const LIBRARY_ERROR_KEYS = new Set(['err', 'error']);
 
 export function normalizeLogRecord(record: Record<string, unknown>): Record<string, unknown> {
   const normalized: Record<string, unknown> = {};
@@ -11,7 +11,7 @@ export function normalizeLogRecord(record: Record<string, unknown>): Record<stri
     try {
       const value = record[key];
 
-      if (LIBRARY_ERROR_KEYS.includes(key) && value instanceof Error) {
+      if (LIBRARY_ERROR_KEYS.has(key) && value instanceof Error) {
         Object.assign(normalized, describeError(value));
 
         continue;

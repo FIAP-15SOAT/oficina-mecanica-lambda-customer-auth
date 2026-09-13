@@ -18,7 +18,7 @@ const positiveInteger = z.coerce.number().int().positive();
 const pem = z
   .string()
   .min(1)
-  .transform((value) => value.replaceAll('\\n', '\n'));
+  .transform((value) => value.replaceAll(String.raw`\n`, '\n'));
 
 const environmentSchema = z
   .object({
