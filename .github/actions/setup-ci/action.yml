@@ -1,8 +1,8 @@
 name: Setup CI
 description: >-
-  Prepare a CI job: set up Node with npm caching, install dependencies, and
-  generate the Prisma client (all from app/). The caller MUST check out the
-  repository first, since a local composite action can only run after checkout.
+  Prepare a CI job: set up Node with npm caching and install dependencies.
+  The caller MUST check out the repository first, since a local composite
+  action can only run after checkout.
 
 inputs:
   node-version:

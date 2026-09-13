@@ -60,7 +60,7 @@ recusa de credencial contra uma credencial estruturalmente válida e inexistente
 
 Qualquer um dos dois reprova a entrega. A discriminação entre `401`, `503`,
 `500` e ausência de resposta vem de graça do tradutor de respostas — ver
-[CI/CD](ci-cd.md#os-dois-portoes-pos-implantacao).
+[CI/CD](ci-cd.md#os-dois-portões-pós-implantação).
 
 ## Propriedades travadas por teste
 

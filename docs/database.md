@@ -7,7 +7,7 @@ A função é **somente leitura** e **não é dona do schema**.
 Este repositório **não contém** definição de schema, migration ou qualquer DDL —
 nem em código de produção, nem em código de teste. As tabelas `users`,
 `user_customers` e `customers` são mantidas pela API principal
-(`oficina-mecanica-app`), e qualquer necessidade de alteração é endereçada
+(`oficina-mecanica-api`), e qualquer necessidade de alteração é endereçada
 naquele repositório.
 
 Onde um banco com o schema real é necessário — desenvolvimento local e a suíte
@@ -72,7 +72,7 @@ reaproveitado nas invocações seguintes. A conexão acompanha esse ciclo.
 | Abertura da conexão | primeira consulta | O pool é preguiçoso. Conectar na composição faria um banco indisponível derrubar a inicialização, trocando o `503` correto por um `500` |
 | Encerramento ao fim da invocação | **nunca** | Encerrá-la destruiria o reaproveitamento, que é a razão de existir da decisão |
 | Expiração por ociosidade | `idleTimeoutMillis: 0` | O ambiente é congelado, não parado — não há ociosidade real a recuperar |
-| `keepAlive` | ligado, com atraso inicial de 10 s | Uma conexão congelada por minutos precisa sobreviver ao NAT do caminho |
+| `keepAlive` | ligado, com atraso inicial de 10 s | Ajuda a detectar conexões encerradas durante o reaproveitamento; o caminho privado até o RDS não passa pelo NAT |
 
 **Por que pool de um, e não conexão única.** Uma conexão única que entre em erro
 fica permanentemente inutilizada até o ambiente ser reciclado. O pool descarta a
@@ -171,16 +171,17 @@ aceitar um certificado não verificado: o segundo nunca acontece.
 
 O banco não é publicamente acessível: `publicly_accessible = false`, subnets
 privadas, ingresso restrito à faixa da rede. A função é anexada às **mesmas
-subnets privadas**, com grupo de segurança próprio, e alcança o banco por uma
-interface de rede criada pela plataforma no momento da partida a frio.
+subnets privadas**, com grupo de segurança próprio, e alcança o banco por ENIs Hyperplane gerenciadas pela plataforma para a combinação de
+subnets e security group.
 
 O grupo de segurança da função não declara regra de ingresso — nada conecta nela
 — e libera o egresso, que alcança o gerenciador de segredos pelo gateway de
 tradução de rede já existente nas rotas privadas.
 
-A criação da interface é o que torna a partida a frio mais cara aqui do que numa
-função sem rede, e é a razão de a composição ser **antecipada na inicialização
-do ambiente** em vez de esperar a primeira invocação.
+O RDS é alcançado pela rede privada, sem passar pelo NAT. Secrets Manager
+e o destino opcional de telemetria usam o NAT da infra-base, pois esta stack
+não declara VPC endpoints. O aquecimento antecipa segredos e PEM; o handshake
+do banco continua na primeira consulta.
 
 ## Orçamento de conexões
 
@@ -188,16 +189,20 @@ Cada ambiente de execução mantém **uma** conexão, pelo pool de tamanho um. O
 número de conexões simultâneas ao banco é, portanto, o número de ambientes
 ativos — e esgotar o limite do banco **derruba a API junto**.
 
-A proteção é a **concorrência reservada em 10**, declarada na configuração da
-função. A instância comporta ~110 conexões e a API vai a cinco réplicas com pool
-próprio: esta função usa menos de um décimo do orçamento.
+O default é **concorrência reservada em 10**, configurável. Com esse valor,
+a Lambda limita a até dez invocações simultâneas e cada ambiente usa pool
+`max: 1`. O orçamento precisa incluir os pools da API, sessões administrativas
+e ambientes ociosos com conexão reaproveitável; o limite efetivo de PostgreSQL
+depende da instância e deve ser consultado com `SHOW max_connections`. A reserva
+de invocações não é uma cota global de conexões abertas.
 
-Não há intermediador de conexões. Com a reserva, ele deixa de ser necessário
-para o volume desta função.
+Não há intermediador de conexões. A configuração atual usa conexão direta. Com a reserva, ele deixa de ser necessário
+para o volume desta função. Sua adequação
+depende do volume e do orçamento compartilhado.
 
 > A reserva pode ser recusada pela conta, que exige ao menos cem execuções não
 > reservadas. O caminho de contorno e o seu custo estão em
-> [Infraestrutura](terraform.md#configuracao-da-funcao).
+> [Infraestrutura](terraform.md#configuração-da-função).
 
 ## A credencial pode ser trocada sem derrubar a função
 

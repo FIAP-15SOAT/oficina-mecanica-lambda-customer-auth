@@ -77,6 +77,6 @@ sempre que a comparação for feita — e é para isso que este ADR existe.
 
 ## Referências
 
-- [Segurança › Modelo de ameaças](../security.md#modelo-de-ameacas)
-- [CI/CD › Análise estática](../ci-cd.md#analise-estatica)
+- [Segurança › Modelo de ameaças](../security.md#modelo-de-ameaças)
+- [CI/CD › Análise estática](../ci-cd.md#análise-estática)
 - [Testes › Propriedades travadas por teste](../testing.md#propriedades-travadas-por-teste)
