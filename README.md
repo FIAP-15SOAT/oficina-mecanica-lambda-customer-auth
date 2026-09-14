@@ -222,3 +222,4 @@ repositório **lê** esse modelo e não contém DDL algum.
 
 Projeto acadêmico (FIAP — 15SOAT), para fins educacionais. Sem licença aberta
 declarada (`UNLICENSED`).
+
