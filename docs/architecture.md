@@ -279,5 +279,5 @@ registrada no output. Detalhes em
 
 O modelo de identidade que esta função lê — `users.cpf`, `user_customers` e
 `customers.is_active` — é definido e mantido pela API principal. O contrato está
-em [API › Identidade externa e autorização por vínculo](https://github.com/FIAP-15SOAT/oficina-mecanica-api/blob/main/docs/architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo).
+em [API › Identidade externa e autorização por vínculo](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service/blob/main/docs/architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo).
 Este repositório **lê** esse modelo e não o define.

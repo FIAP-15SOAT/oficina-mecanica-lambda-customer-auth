@@ -100,8 +100,8 @@ node -e "console.log(JSON.stringify(require('node:fs').readFileSync('customer-au
 ### 2. Subir a API
 
 ```bash
-git clone https://github.com/FIAP-15SOAT/oficina-mecanica-api.git
-cd oficina-mecanica-api/app
+git clone https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service.git
+cd oficina-mecanica-work-order-service/app
 cp .env.example .env
 ```
 
