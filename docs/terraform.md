@@ -32,7 +32,7 @@ como variável.
 | --- | --- | --- |
 | `infra-base` | `infra/prod-simulated/infra-base/terraform.tfstate` | `vpc_id`, `private_subnet_ids` |
 | `database` | `infra/prod-simulated/database/terraform.tfstate` | `db_host`, `db_port`, `db_name`, `db_credentials_secret_arn` |
-| `gateway` | `infra/prod-simulated/gateway/terraform.tfstate` | `api_execution_arn`, `api_endpoint` |
+| `gateway` | `infra/prod-simulated/api-gateway/terraform.tfstate` | `api_execution_arn`, `api_endpoint` |
 
 ## Backend
 
@@ -111,7 +111,7 @@ conta e os produtores dos states; o default não comprova disponibilidade cloud.
 | `database_state_key` | Chave do state de banco | `string` | `infra/prod-simulated/database/terraform.tfstate` | Seleciona o objeto que publica host, porta, nome e ARN do segredo. |
 | `database_state_region` | Região do state de banco | `string` | `us-east-1` | Configura a leitura S3 do state correspondente. |
 | `gateway_state_bucket` | Bucket do state de gateway | `string` | `bkt-oficina-mecanica` | Localiza o bucket S3 da stack consumida; não cria o bucket. |
-| `gateway_state_key` | Chave do state de gateway | `string` | `infra/prod-simulated/gateway/terraform.tfstate` | Seleciona o objeto que publica ARN de execução e endpoint público. |
+| `gateway_state_key` | Chave do state de gateway | `string` | `infra/prod-simulated/api-gateway/terraform.tfstate` | Seleciona o objeto que publica ARN de execução e endpoint público. |
 | `gateway_state_region` | Região do state de gateway | `string` | `us-east-1` | Configura a leitura S3 do state correspondente. |
 | `function_name` | Nome da função | `string` | `lbd-oficina-mecanica-customer-auth` | Configura a função, seu log group e a tag Name; deve coincidir com o nome configurado no gateway. |
 | `lambda_execution_role_name` | Nome de role existente | `string` | `LabRole` | Resolve data.aws_iam_role.lambda_execution; esta stack não cria nem modifica sua política. |

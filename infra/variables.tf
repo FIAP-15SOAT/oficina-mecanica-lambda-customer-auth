@@ -65,7 +65,7 @@ variable "gateway_state_bucket" {
 variable "gateway_state_key" {
   description = "S3 object key for the gateway Terraform state (source of api_execution_arn and api_endpoint)"
   type        = string
-  default     = "infra/prod-simulated/gateway/terraform.tfstate"
+  default     = "infra/prod-simulated/api-gateway/terraform.tfstate"
 }
 
 variable "gateway_state_region" {
