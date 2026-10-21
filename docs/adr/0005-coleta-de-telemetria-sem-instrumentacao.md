@@ -90,4 +90,4 @@ necessários com overhead medido e custo de ingestão antes de adotar um SDK.
 - [Logging](../logging.md)
 - [Infraestrutura › Variáveis de ambiente da função](../terraform.md#variáveis-de-ambiente-da-função)
 - ADR de telemetria da API (`docs/adr/0005-opentelemetry.md`, em
-  `oficina-mecanica-api`) — o critério de que a lacuna dominante é coleta
+  `oficina-mecanica-work-order-service`) — o critério de que a lacuna dominante é coleta

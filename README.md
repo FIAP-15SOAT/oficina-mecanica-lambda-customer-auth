@@ -182,7 +182,7 @@ Todos rodam a partir de `app/`.
 
 | Repositório | Papel | Relação com esta função |
 | --- | --- | --- |
-| [`oficina-mecanica-api`](https://github.com/FIAP-15SOAT/oficina-mecanica-api) | API principal (NestJS) | **Dona do schema** e da identidade. Verifica o token emitido aqui, com uma estratégia separada da interna. Sua imagem é usada como migrador do banco local e de teste |
+| [`oficina-mecanica-work-order-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service) | API principal (NestJS) | **Dona do schema** e da identidade. Verifica o token emitido aqui, com uma estratégia separada da interna. Sua imagem é usada como migrador do banco local e de teste |
 | [`oficina-mecanica-infra-base`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Rede | Dona da VPC e das subnets privadas às quais esta função é anexada |
 | [`oficina-mecanica-infra-database`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database) | Banco | Dono da instância e da credencial. Expõe endereço, porta, nome e o identificador do segredo por output |
 | [`oficina-mecanica-api-gateway`](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway) | API Gateway | Publica `POST /customer-auth/login` e consome [`docs/contracts.md`](docs/contracts.md). Esta stack concede a autorização de invocação |
@@ -191,7 +191,7 @@ Todos rodam a partir de `app/`.
 | **[`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth)** | **Esta função** | Emite o token externo, e é dona da própria stack de infraestrutura |
 
 O modelo de identidade — `users.cpf`, `user_customers`, `customers.is_active` —
-é definido e mantido pela API. O contrato de acesso está em [API › Identidade externa e autorização por vínculo](https://github.com/FIAP-15SOAT/oficina-mecanica-api/blob/main/docs/architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo). Este
+é definido e mantido pela API. O contrato de acesso está em [API › Identidade externa e autorização por vínculo](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service/blob/main/docs/architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo). Este
 repositório **lê** esse modelo e não contém DDL algum.
 
 ## 📦 Estado
