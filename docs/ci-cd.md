@@ -116,7 +116,7 @@ Sem `needs`; executa em paralelo aos demais jobs de validação.
 | 6 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
 | 7 | Build the package for the plan | Gera `app/dist` no próprio job, pois o archive_file do Terraform precisa dessa saída para o plan. |
 | 8 | Configure AWS Credentials | Configura access key, secret key e session token da mesma sessão AWS, em us-east-1. Este step tolera falha e conserva `aws_creds.outcome` para decidir entre plan e nota de skip. |
-| 9 | Terraform Plan Lambda Customer Auth | Só com `aws_creds.outcome == success`: executa init com backend (`-reconfigure`) e plan. Qualquer erro desses comandos reprova o job. |
+| 9 | Terraform Plan Lambda Customer Auth | Só com `aws_creds.outcome == success`: executa init com backend (`-reconfigure` e `-backend-config="bucket=$TF_STATE_BUCKET"`) e plan. Qualquer erro desses comandos reprova o job. |
 | 10 | Note skipped plan in job summary | Só com `aws_creds.outcome == failure`: registra no resumo que a prévia foi pulada; não ignora erro de um plan executado. |
 
 #### `open-pr` — Open Pull Request
@@ -262,7 +262,7 @@ falha.
 | 4 | Build | Compila/empacota a aplicação em `app/dist` com o comando de build do projeto. |
 | 5 | hashicorp/setup-terraform | Instala/configura a CLI Terraform para os comandos seguintes. |
 | 6 | Configure AWS Credentials | Configura access key, secret key e session token da mesma sessão AWS, em us-east-1. |
-| 7 | Terraform Init | Executa `terraform init -no-color`, instalando providers e configurando o backend S3 real. |
+| 7 | Terraform Init | Executa `terraform init -no-color -backend-config="bucket=$TF_STATE_BUCKET"`, instalando providers e configurando o backend S3 real. |
 | 8 | Terraform Validate | Executa `terraform validate -no-color`; inconsistência de configuração reprova o job. |
 | 9 | Terraform Plan | Executa `terraform plan -no-color` com `TF_VAR_service_version=github.sha`, coleta opcional e chave Datadog; consulta os três states e mostra as alterações. |
 | 10 | Terraform Apply | Usa os mesmos `TF_VAR_*`, empacota `app/dist` e aplica a função e a permissão; `publish=true` registra versões quando há mudança versionável. Não aplica plano salvo. |
@@ -362,6 +362,7 @@ environment e satisfaz as suas regras.
 | `AWS_ACCESS_KEY_ID` | Segredo | CI, CD | Autenticação na nuvem | CD: sim · CI: não (a prévia é pulada sem ele) |
 | `AWS_SECRET_ACCESS_KEY` | Segredo | CI, CD | Autenticação na nuvem | CD: sim · CI: não |
 | `AWS_SESSION_TOKEN` | Segredo | CI, CD | Autenticação na nuvem. **A omissão produz falha de token inválido em toda chamada** | CD: sim · CI: não |
+| `TF_STATE_BUCKET` | Variável | CI, CD | Nome do bucket de state, em variável para trocá-lo sem editar arquivo versionado: vai ao `terraform init` por `-backend-config` e às três `TF_VAR_*_state_bucket`; sem ela, o `init` falha | Sim |
 | `BOT_APP_ID` | Variável | CI | Identidade da aplicação que abre o Pull Request | Sim |
 | `BOT_PRIVATE_KEY` | Segredo | CI | Credencial da mesma aplicação | Sim |
 | `DD_API_KEY` | Segredo | CD | Credencial do destino de telemetria. É a **mesma** que a API usa — por isso vive na organização, e não neste repositório | Somente quando a coleta está ligada |
