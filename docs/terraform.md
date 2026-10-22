@@ -37,12 +37,15 @@ como variável.
 ## Backend
 
 ```hcl
-bucket       = "bkt-oficina-mecanica"
 key          = "infra/prod-simulated/lambda-customer-auth/terraform.tfstate"
 region       = "us-east-1"
 encrypt      = true
 use_lockfile = true
 ```
+
+O `backend.tf` não declara o bucket: os workflows passam
+`-backend-config="bucket=$TF_STATE_BUCKET"` no `terraform init`, com a
+variável de Actions da organização `TF_STATE_BUCKET`.
 
 Cifração em repouso e trava por arquivo de bloqueio no próprio armazenamento de
 objetos — as mesmas opções das outras cinco stacks, sem tabela auxiliar.
@@ -96,7 +99,7 @@ transferência de dados e custos de Secrets Manager, logs e telemetria.
 
 ## Variáveis de entrada Terraform
 
-Os 27 inputs têm default. Role, limites e nomes devem ser confrontados com a
+Dos 27 inputs, 24 têm default; os três `*_state_bucket` não têm e vêm de `TF_STATE_BUCKET` (workflow) ou do `export` local. Role, limites e nomes devem ser confrontados com a
 conta e os produtores dos states; o default não comprova disponibilidade cloud.
 
 | Variável | Descrição | Tipo | Padrão | Uso |
@@ -104,13 +107,13 @@ conta e os produtores dos states; o default não comprova disponibilidade cloud.
 | `aws_region` | Região dos recursos | `string` | `us-east-1` | Configura AWS e compõe o ARN da layer opcional. |
 | `project_name` | Nome base do projeto | `string` | `oficina-mecanica` | Compõe SG, nome do segredo de assinatura e tags. |
 | `environment` | Ambiente de infraestrutura | `string` | `prod-simulated` | Aplica a tag Environment; NODE_ENV e DD_ENV continuam production. |
-| `aws_base_state_bucket` | Bucket do state de rede | `string` | `bkt-oficina-mecanica` | Localiza o bucket S3 da stack consumida; não cria o bucket. |
+| `aws_base_state_bucket` | Bucket do state de rede | `string` | — | Localiza o bucket S3 da stack consumida; não cria o bucket. Os workflows a preenchem com `TF_STATE_BUCKET`. |
 | `aws_base_state_key` | Chave do state de rede | `string` | `infra/prod-simulated/infra-base/terraform.tfstate` | Seleciona o objeto que publica VPC e subnets privadas. |
 | `aws_base_state_region` | Região do state de rede | `string` | `us-east-1` | Configura a leitura S3 do state correspondente. |
-| `database_state_bucket` | Bucket do state de banco | `string` | `bkt-oficina-mecanica` | Localiza o bucket S3 da stack consumida; não cria o bucket. |
+| `database_state_bucket` | Bucket do state de banco | `string` | — | Localiza o bucket S3 da stack consumida; não cria o bucket. Os workflows a preenchem com `TF_STATE_BUCKET`. |
 | `database_state_key` | Chave do state de banco | `string` | `infra/prod-simulated/database/terraform.tfstate` | Seleciona o objeto que publica host, porta, nome e ARN do segredo. |
 | `database_state_region` | Região do state de banco | `string` | `us-east-1` | Configura a leitura S3 do state correspondente. |
-| `gateway_state_bucket` | Bucket do state de gateway | `string` | `bkt-oficina-mecanica` | Localiza o bucket S3 da stack consumida; não cria o bucket. |
+| `gateway_state_bucket` | Bucket do state de gateway | `string` | — | Localiza o bucket S3 da stack consumida; não cria o bucket. Os workflows a preenchem com `TF_STATE_BUCKET`. |
 | `gateway_state_key` | Chave do state de gateway | `string` | `infra/prod-simulated/api-gateway/terraform.tfstate` | Seleciona o objeto que publica ARN de execução e endpoint público. |
 | `gateway_state_region` | Região do state de gateway | `string` | `us-east-1` | Configura a leitura S3 do state correspondente. |
 | `function_name` | Nome da função | `string` | `lbd-oficina-mecanica-customer-auth` | Configura a função, seu log group e a tag Name; deve coincidir com o nome configurado no gateway. |
@@ -230,7 +233,11 @@ npm ci
 npm run build
 # Usar credenciais AWS válidas e os três states já aplicados
 cd ../infra
-terraform init -reconfigure
+export TF_STATE_BUCKET="<nome do bucket>"
+export TF_VAR_aws_base_state_bucket="$TF_STATE_BUCKET"
+export TF_VAR_database_state_bucket="$TF_STATE_BUCKET"
+export TF_VAR_gateway_state_bucket="$TF_STATE_BUCKET"
+terraform init -reconfigure -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisar o plano, sem criar recursos
 terraform plan
 ```
