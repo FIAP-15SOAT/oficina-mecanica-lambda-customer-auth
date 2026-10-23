@@ -81,7 +81,7 @@ Em produção, o RDS gera e mantém a master password no Secrets Manager, com
 rotação automática desabilitada. A Lambda recebe o ARN pelo output
 `db_credentials_secret_arn` e lê `username`/`password` diretamente, ignorando
 campos adicionais. Não passa pelo CD da API ou pelo Kubernetes Secret. Detalhes em [Banco](docs/database.md#a-forma-do-segredo) e no
-[ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
+[ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
 
 ## 🚀 Início rápido
 
@@ -184,7 +184,7 @@ Todos rodam a partir de `app/`.
 | --- | --- | --- |
 | [`oficina-mecanica-work-order-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service) | API principal (NestJS) | **Dona do schema** e da identidade. Verifica o token emitido aqui, com uma estratégia separada da interna. Sua imagem é usada como migrador do banco local e de teste |
 | [`oficina-mecanica-infra-base`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Rede | Dona da VPC e das subnets privadas às quais esta função é anexada |
-| [`oficina-mecanica-infra-database`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database) | Banco | Dono da instância e da credencial. Expõe endereço, porta, nome e o identificador do segredo por output |
+| [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order) | Banco | Dono da instância e da credencial. Expõe endereço, porta, nome e o identificador do segredo por output |
 | [`oficina-mecanica-api-gateway`](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway) | API Gateway | Publica `POST /customer-auth/login` e consome [`docs/contracts.md`](docs/contracts.md). Esta stack concede a autorização de invocação |
 | [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) | Cluster | Executa a API principal. Não participa desta função |
 | [`oficina-mecanica-custom-monitoring`](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring) | Observabilidade | Provisiona dashboards, monitors e Synthetic; a coleta opcional desta função é configurada nesta stack |

@@ -104,7 +104,7 @@ mudança de runtime, refresh contínuo, retry ou lifecycle do pool nesta entrega
 O descarte atual da composição após erro de autenticação não substitui uma
 estratégia de rotação coordenada. Ao destruir o RDS, seu Secret é removido; a
 recriação gera novo ARN, exigindo reaplicar a stack da Lambda após o database.
-Veja o [ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
+Veja o [ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
 
 A chave de assinatura segue regra diferente e está documentada em
 [Segurança › Custódia da chave](security.md#custódia-da-chave): ali o valor do

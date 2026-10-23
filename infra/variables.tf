@@ -45,7 +45,7 @@ variable "database_state_bucket" {
 variable "database_state_key" {
   description = "S3 object key for the database Terraform state (source of db_host, db_port, db_name and db_credentials_secret_arn)"
   type        = string
-  default     = "infra/prod-simulated/database/terraform.tfstate"
+  default     = "infra/prod-simulated/infra-database-work-order/terraform.tfstate"
 }
 
 variable "database_state_region" {

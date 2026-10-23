@@ -16,7 +16,7 @@ revisão que ela.
 | Grupo de log da função | **este repositório** | Sem declaração, a plataforma o cria com retenção indefinida |
 | Contêiner do segredo da chave privada de assinatura | **este repositório** | O material é da função; o **valor** é escrito pela entrega |
 | Rede, subnets, gateway de tradução | `oficina-mecanica-infra-base` | Consumido por leitura de state remoto |
-| Banco, seu grupo de segurança e o segredo da credencial | `oficina-mecanica-infra-database` | Quem é dono do recurso é dono da credencial |
+| Banco, seu grupo de segurança e o segredo da credencial | `oficina-mecanica-infra-database-work-order` | Quem é dono do recurso é dono da credencial |
 | API Gateway, rota e limitação de frequência | `oficina-mecanica-api-gateway` | A rota é publicada lá; esta stack apenas autoriza a invocação |
 | Cluster, registro de imagens e balanceador | `oficina-mecanica-infra-k8s` | Não participa desta função |
 | Bucket do state | compartilhado, pré-existente | Já existe e serve as seis stacks Terraform. **Esta acrescenta apenas uma chave** |
@@ -31,7 +31,7 @@ como variável.
 | Origem | Chave do state | O que esta stack lê |
 | --- | --- | --- |
 | `infra-base` | `infra/prod-simulated/infra-base/terraform.tfstate` | `vpc_id`, `private_subnet_ids` |
-| `database` | `infra/prod-simulated/database/terraform.tfstate` | `db_host`, `db_port`, `db_name`, `db_credentials_secret_arn` |
+| `database` | `infra/prod-simulated/infra-database-work-order/terraform.tfstate` | `db_host`, `db_port`, `db_name`, `db_credentials_secret_arn` |
 | `gateway` | `infra/prod-simulated/api-gateway/terraform.tfstate` | `api_execution_arn`, `api_endpoint` |
 
 ## Backend
@@ -111,7 +111,7 @@ conta e os produtores dos states; o default não comprova disponibilidade cloud.
 | `aws_base_state_key` | Chave do state de rede | `string` | `infra/prod-simulated/infra-base/terraform.tfstate` | Seleciona o objeto que publica VPC e subnets privadas. |
 | `aws_base_state_region` | Região do state de rede | `string` | `us-east-1` | Configura a leitura S3 do state correspondente. |
 | `database_state_bucket` | Bucket do state de banco | `string` | — | Localiza o bucket S3 da stack consumida; não cria o bucket. Os workflows a preenchem com `TF_STATE_BUCKET`. |
-| `database_state_key` | Chave do state de banco | `string` | `infra/prod-simulated/database/terraform.tfstate` | Seleciona o objeto que publica host, porta, nome e ARN do segredo. |
+| `database_state_key` | Chave do state de banco | `string` | `infra/prod-simulated/infra-database-work-order/terraform.tfstate` | Seleciona o objeto que publica host, porta, nome e ARN do segredo. |
 | `database_state_region` | Região do state de banco | `string` | `us-east-1` | Configura a leitura S3 do state correspondente. |
 | `gateway_state_bucket` | Bucket do state de gateway | `string` | — | Localiza o bucket S3 da stack consumida; não cria o bucket. Os workflows a preenchem com `TF_STATE_BUCKET`. |
 | `gateway_state_key` | Chave do state de gateway | `string` | `infra/prod-simulated/api-gateway/terraform.tfstate` | Seleciona o objeto que publica ARN de execução e endpoint público. |
@@ -181,7 +181,7 @@ constitui suporte a rotação coordenada; refresh/retry/encerramento de pool exi
 outra change.
 O State do database contém somente referências/metadados, não a senha; esta
 stack também recebe somente o ARN, e o valor é recuperado pelo runtime.
-Veja o [ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
+Veja o [ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
 
 ## A chave privada não transita pelo state
 
