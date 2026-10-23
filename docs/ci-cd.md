@@ -10,7 +10,7 @@ análise estática e entrega.
 | --- | --- | --- | --- |
 | CI | `.github/workflows/ci.yml` | `push` em `feature/**` e `fix/**` | Pull Request aberto para `main` |
 | SAST | `.github/workflows/sast.yml` | Pull Request para `main` e `push` em `main` | Portão de qualidade da análise estática |
-| CD | `.github/workflows/cd.yml` | `push` em `main` e execução manual | Rota pública respondendo pela função, em dois jobs: entrega e verificação |
+| CD | `.github/workflows/cd.yml` | `push` em `main` e execução manual (`action`: `apply` padrão ou `destroy`) | Rota pública respondendo pela função, em dois jobs (`Deploy Lambda` e `Post-Deploy Gates`), ou destruição da infraestrutura da função quando `action=destroy` |
 
 ![CI Workflow: os seis jobs de validação — Lint, Type Check, Unit Tests, E2E
 Tests, Package e Terraform Validation — executam em paralelo a partir do push e
@@ -239,8 +239,8 @@ A entrega e a verificação vivem em **jobs separados**, encadeados por `needs`.
 
 | Job | O que faz | Quando executa |
 | --- | --- | --- |
-| `Deploy Lambda` | Publica a função | Passados os três portões de entrada |
-| `Post-Deploy Gates` | Prova que o que foi publicado atende | Só se a entrega concluir com sucesso |
+| `Deploy Lambda` | Publica a função (`apply` padrão) ou destrói a infraestrutura da função (`action=destroy`) | Passados os três portões de entrada |
+| `Post-Deploy Gates` | Prova que o que foi publicado atende | Só se a entrega concluir com sucesso e `action != 'destroy'` |
 
 A separação é de leitura, e ela importa: quando um portão reprova, a função
 **foi** publicada — o que falhou foi a verificação. Com tudo no mesmo job, um
@@ -257,18 +257,19 @@ falha.
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
-| 2 | Validate required secrets | Antes de chamadas à nuvem, verifica a chave de assinatura/PEM e a credencial Datadog quando coleta estiver ligada; ausência reprova com o nome do item. |
-| 3 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
-| 4 | Build | Compila/empacota a aplicação em `app/dist` com o comando de build do projeto. |
+| 2 | Validate required secrets | Quando `action != 'destroy'`, antes de chamadas à nuvem, verifica a chave de assinatura/PEM e a credencial Datadog quando coleta estiver ligada; ausência reprova com o nome do item. |
+| 3 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. Executa tanto em `apply` quanto em `destroy`. |
+| 4 | Build | Compila/empacota a aplicação em `app/dist` com o comando de build do projeto (necessário tanto em `apply` quanto em `destroy`, pois `data.archive_file` em `infra/` exige o diretório `app/dist`). |
 | 5 | hashicorp/setup-terraform | Instala/configura a CLI Terraform para os comandos seguintes. |
 | 6 | Configure AWS Credentials | Configura access key, secret key e session token da mesma sessão AWS, em us-east-1. |
 | 7 | Terraform Init | Executa `terraform init -no-color -backend-config="bucket=$TF_STATE_BUCKET"`, instalando providers e configurando o backend S3 real. |
 | 8 | Terraform Validate | Executa `terraform validate -no-color`; inconsistência de configuração reprova o job. |
-| 9 | Terraform Plan | Executa `terraform plan -no-color` com `TF_VAR_service_version=github.sha`, coleta opcional e chave Datadog; consulta os três states e mostra as alterações. |
-| 10 | Terraform Apply | Usa os mesmos `TF_VAR_*`, empacota `app/dist` e aplica a função e a permissão; `publish=true` registra versões quando há mudança versionável. Não aplica plano salvo. |
-| 11 | Read stack outputs | Lê nome/versão da função, ARN do segredo e endpoint público; publica as saídas usadas pelos steps e pelo job pós-deploy. |
-| 12 | Write the signing key value idempotently | Grava o material no Secrets Manager com identificador derivado do hash; mesma chave reutiliza a versão existente. |
-| 13 | Record the deployment in the job summary | Registra no resumo commit, função, versão publicada e estado da coleta. Executa com `if: always()`, inclusive depois de falha; o resumo não transforma uma falha em sucesso. |
+| 9 | Terraform Plan | Quando `action != 'destroy'`, executa `terraform plan -no-color` com `TF_VAR_service_version=github.sha`, coleta opcional e chave Datadog; consulta os três states e mostra as alterações. |
+| 10 | Terraform Apply | Quando `action != 'destroy'`, usa os mesmos `TF_VAR_*`, empacota `app/dist` e aplica a função e a permissão; `publish=true` registra versões quando há mudança versionável. Não aplica plano salvo. |
+| 11 | Terraform Destroy | Somente quando disparado via `workflow_dispatch` com `action == 'destroy'`, executa `terraform destroy -auto-approve -no-color` em `infra/` com `TF_VAR_service_version`, `TF_VAR_enable_telemetry_collection` e `TF_VAR_telemetry_api_key`, removendo a função, o segredo, o Security Group, a permissão do API Gateway e o log group e atualizando o state remoto no S3. |
+| 12 | Read stack outputs | Quando `action != 'destroy'`, lê nome/versão da função, ARN do segredo e endpoint público; publica as saídas usadas pelos steps e pelo job pós-deploy. |
+| 13 | Write the signing key value idempotently | Quando `action != 'destroy'`, grava o material no Secrets Manager com identificador derivado do hash; mesma chave reutiliza a versão existente. |
+| 14 | Record the deployment in the job summary | Quando `action != 'destroy'`, registra no resumo commit, função, versão publicada e estado da coleta. Executa com `if: always() && (github.event_name != 'workflow_dispatch' || inputs.action != 'destroy')`, inclusive depois de falha de apply; o resumo não transforma uma falha em sucesso. |
 
 #### `Post-Deploy Gates`
 
