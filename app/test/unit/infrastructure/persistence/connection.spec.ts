@@ -26,7 +26,7 @@ describe('parseDatabaseCredentials', () => {
       engine: 'postgres',
       host: 'db.internal',
       port: 5432,
-      dbInstanceIdentifier: 'rds-oficina-mecanica',
+      dbInstanceIdentifier: 'rds-oficina-mecanica-work-order',
     };
 
     expect(parseDatabaseCredentials(JSON.stringify(rdsManagedSecret))).toEqual(CREDENTIALS);

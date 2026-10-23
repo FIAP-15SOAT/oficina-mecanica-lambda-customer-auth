@@ -21,7 +21,7 @@ Secrets Manager é a fonte de verdade, não o único local materializado.
 Nenhuma mudança de runtime/pool ou de menor privilégio foi introduzida;
 habilitar rotação exige nova change.
 
-[ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
+[ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
 
 ### Superfícies do login
 
