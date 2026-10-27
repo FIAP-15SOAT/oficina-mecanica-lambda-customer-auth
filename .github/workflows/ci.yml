@@ -21,7 +21,7 @@ env:
   TF_VAR_gateway_state_bucket: ${{ vars.TF_STATE_BUCKET }}
   API_REPOSITORY: FIAP-15SOAT/oficina-mecanica-work-order-service
   API_MIGRATOR_COMMIT: 84af3af171cbacf04f63994577633667c97c91b9
-  API_MIGRATOR_IMAGE: techchallenge-api:local
+  API_MIGRATOR_IMAGE: work-order-service:local
   # Limite de envio direto do pacote compactado, em bytes (50 MiB).
   PACKAGE_SIZE_LIMIT_BYTES: "52428800"
 

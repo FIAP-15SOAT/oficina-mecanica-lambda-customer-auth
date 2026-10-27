@@ -76,7 +76,7 @@ describe('buildErrorResponse', () => {
       buildErrorResponse(
         new DatabaseOperationException('busca', {
           cause: new Error(
-            'connect ECONNREFUSED 10.0.3.17:5432 postgresql://oficina_ro:senha@db.internal/techchallenge',
+            'connect ECONNREFUSED 10.0.3.17:5432 postgresql://oficina_ro:senha@db.internal/work_order',
           ),
         }),
       ).body,

@@ -143,7 +143,7 @@ publicou:
 CUSTOMER_JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 DATABASE_HOST=localhost
 DATABASE_PORT=5432
-DATABASE_NAME=techchallenge
+DATABASE_NAME=work_order
 DATABASE_SSL=false
 DATABASE_SECRET={"username":"postgres","password":"postgres"}
 ```

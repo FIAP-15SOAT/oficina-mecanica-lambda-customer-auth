@@ -13,7 +13,7 @@ const CREDENTIALS = { username: 'oficina_ro', password: 'super-secreta' };
 const ENVIRONMENT = {
   DATABASE_HOST: 'db.internal',
   DATABASE_PORT: 5432,
-  DATABASE_NAME: 'techchallenge',
+  DATABASE_NAME: 'work_order',
   DATABASE_CONNECTION_TIMEOUT_MS: 3000,
   DATABASE_QUERY_TIMEOUT_MS: 5000,
   DATABASE_SSL: true,
@@ -71,7 +71,7 @@ describe('buildPoolConfig', () => {
     expect(buildPoolConfig(ENVIRONMENT, CREDENTIALS)).toMatchObject({
       host: 'db.internal',
       port: 5432,
-      database: 'techchallenge',
+      database: 'work_order',
       user: 'oficina_ro',
       password: 'super-secreta',
     });

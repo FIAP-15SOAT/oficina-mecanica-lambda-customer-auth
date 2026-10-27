@@ -35,7 +35,7 @@ const { privateKey: PRIVATE_KEY } = generateKeyPairSync('rsa', {
 const ENVIRONMENT: NodeJS.ProcessEnv = {
   NODE_ENV: 'test',
   DATABASE_HOST: 'localhost',
-  DATABASE_NAME: 'techchallenge',
+  DATABASE_NAME: 'work_order',
   DATABASE_SSL: 'false',
   DATABASE_SECRET: '{"username":"postgres","password":"postgres"}',
   CUSTOMER_JWT_PRIVATE_KEY: PRIVATE_KEY,
