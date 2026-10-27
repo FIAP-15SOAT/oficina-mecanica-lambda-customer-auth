@@ -4,7 +4,7 @@ import { ConfigurationException } from '@infrastructure/exceptions/configuration
 const MINIMUM: NodeJS.ProcessEnv = {
   NODE_ENV: 'development',
   DATABASE_HOST: 'db.internal',
-  DATABASE_NAME: 'techchallenge',
+  DATABASE_NAME: 'work_order',
   DATABASE_SECRET_ID: 'oficina/customer-auth/database',
   CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID: 'oficina/customer-auth/jwt',
 };
@@ -73,7 +73,7 @@ describe('loadEnvironment', () => {
     const environment = loadEnvironment({
       NODE_ENV: 'development',
       DATABASE_HOST: 'localhost',
-      DATABASE_NAME: 'techchallenge',
+      DATABASE_NAME: 'work_order',
       DATABASE_SECRET: '{"username":"postgres","password":"postgres"}',
       CUSTOMER_JWT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----',
     });
@@ -125,7 +125,7 @@ describe('loadEnvironment', () => {
       loadEnvironment({
         NODE_ENV: 'test',
         DATABASE_HOST: 'localhost',
-        DATABASE_NAME: 'techchallenge',
+        DATABASE_NAME: 'work_order',
         DATABASE_SECRET: '{"username":"postgres","password":"postgres"}',
         CUSTOMER_JWT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----',
       }).NODE_ENV,

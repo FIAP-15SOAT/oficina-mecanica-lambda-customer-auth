@@ -6,11 +6,11 @@ import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers
  * àquele repositório; este apenas o invoca
  * A imagem é produzida no repositório da API com `docker compose build migrate`.
  */
-export const API_MIGRATOR_IMAGE = process.env.API_MIGRATOR_IMAGE ?? 'techchallenge-api:local';
+export const API_MIGRATOR_IMAGE = process.env.API_MIGRATOR_IMAGE ?? 'work-order-service:local';
 
 const POSTGRES_IMAGE = 'postgres:16-alpine';
 const NETWORK_ALIAS = 'db';
-const DATABASE = 'techchallenge';
+const DATABASE = 'work_order';
 const USERNAME = 'postgres';
 const PASSWORD = 'postgres';
 
