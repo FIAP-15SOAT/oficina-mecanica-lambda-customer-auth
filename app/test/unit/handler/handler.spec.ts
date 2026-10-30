@@ -247,7 +247,7 @@ describe('handler', () => {
       const response = await handler(buildJsonEvent(CREDENTIAL), buildContext());
 
       expect(response.statusCode).toBe(500);
-      expect(bodyOf(response).message).toBe('An unexpected error occurred');
+      expect(bodyOf(response).message).toBe('Ocorreu um erro inesperado');
     });
 
     /**
@@ -264,7 +264,7 @@ describe('handler', () => {
       expect(bodyOf(response)).toEqual({
         statusCode: 500,
         error: 'Internal Server Error',
-        message: 'An unexpected error occurred',
+        message: 'Ocorreu um erro inesperado',
       });
       expect(String(response.body)).not.toContain('secrets manager');
     });
