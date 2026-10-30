@@ -14,7 +14,7 @@ export const JSON_CONTENT_TYPE = 'application/json';
 
 export const INVALID_CREDENTIALS_MESSAGE = 'Credenciais inválidas';
 export const SERVICE_UNAVAILABLE_MESSAGE = 'Serviço temporariamente indisponível';
-export const UNEXPECTED_ERROR_MESSAGE = 'An unexpected error occurred';
+export const UNEXPECTED_ERROR_MESSAGE = 'Ocorreu um erro inesperado';
 
 export interface ErrorBody {
   statusCode: number;

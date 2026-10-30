@@ -93,7 +93,7 @@ principal usa:
 | `400` | `Bad Request` | `CPF inválido` | CPF reprovado na validação |
 | `401` | `Unauthorized` | `Credenciais inválidas` | **Qualquer** falha de credencial |
 | `503` | `Service Unavailable` | `Serviço temporariamente indisponível` | Banco indisponível ou estouro de limite de tempo |
-| `500` | `Internal Server Error` | `An unexpected error occurred` | Falha ao assinar o token, ou erro não previsto |
+| `500` | `Internal Server Error` | `Ocorreu um erro inesperado` | Falha ao assinar o token, ou erro não previsto |
 
 ### A resposta `401` é sempre a mesma
 
