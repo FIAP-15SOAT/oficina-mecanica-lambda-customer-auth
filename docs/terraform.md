@@ -4,7 +4,7 @@ A stack desta função vive em `infra/`, no mesmo repositório do código: o que
 muda junto fica junto, e a configuração da função passa pelo mesmo ciclo de
 revisão que ela.
 
-![Arquitetura: API Gateway invoca a Lambda; ENIs Hyperplane permitem acesso privado ao RDS e ao NAT para Secrets Manager; logs no CloudWatch](diagrams/infrastructure.png)
+![Arquitetura: o API Gateway invoca a função Lambda, que executa nas subnets privadas da VPC; por interfaces de rede compartilhadas (ENIs Hyperplane) ela alcança o NLB interno do cluster Kubernetes, na porta 8081 para o Identity e 80 para o work-order, e, pelo NAT Gateway, o Secrets Manager; os logs vão para o CloudWatch Logs](diagrams/infrastructure.png)
 
 ## O que esta stack provisiona
 
@@ -19,7 +19,7 @@ revisão que ela.
 | Cluster Kubernetes e NLB interno (Network Load Balancer, o balanceador de rede que dá acesso aos serviços do cluster) | `oficina-mecanica-infra-k8s` | O endereço e as portas do NLB são consumidos por leitura de state remoto |
 | Identity (usuários e senhas) e work-order (clientes e vínculos) | os repositórios de cada serviço | A função só os chama, pelas rotas internas atrás do NLB |
 | API Gateway, rota e limitação de frequência | `oficina-mecanica-api-gateway` | A rota é publicada lá; esta stack apenas autoriza a invocação |
-| Bucket do state | compartilhado, pré-existente | Já existe e serve as seis stacks Terraform. **Esta acrescenta apenas uma chave** |
+| Bucket do state | compartilhado, pré-existente | Já existe e serve as stacks Terraform da solução. **Esta acrescenta apenas uma chave** |
 | Qualquer role de identidade | **ninguém** — o laboratório não permite criar roles | A role de execução é lida por fonte de dados, nunca criada |
 
 ## Estado remoto
@@ -51,7 +51,7 @@ O `backend.tf` não declara o bucket: os workflows passam
 variável de Actions da organização `TF_STATE_BUCKET`.
 
 Cifração em repouso e trava por arquivo de bloqueio no próprio armazenamento de
-objetos — as mesmas opções das outras cinco stacks, sem tabela auxiliar.
+objetos — as mesmas opções das demais stacks, sem tabela auxiliar.
 
 O arquivo de bloqueio de provedores (`.terraform.lock.hcl`) é versionado, como
 nas demais stacks da solução, e cobre `linux_amd64` — a esteira —, `windows_amd64`
@@ -163,7 +163,7 @@ forma idempotente, com identificador de requisição derivado do resumo
 criptográfico do material.
 
 Declarar o valor na infraestrutura o colocaria em texto puro no state, num bucket
-compartilhado pelas seis stacks Terraform. Quem tem a chave privada emite token para
+compartilhado pelas stacks Terraform da solução. Quem tem a chave privada emite token para
 qualquer cliente: é o material mais sensível da solução.
 
 Um ambiente novo só fica funcional depois de a entrega gravar o PEM — o que ela

@@ -136,7 +136,7 @@ significa legível por quem tiver permissão de escrita.
 **O valor nunca transita pelo state da infraestrutura.** A stack declara o
 contêiner do segredo e não o seu valor; a entrega grava o valor de forma
 idempotente. Declará-lo na infraestrutura o colocaria em texto puro num bucket
-compartilhado pelas seis stacks Terraform.
+compartilhado pelas stacks Terraform da solução.
 
 A metade pública correspondente é configurada no ambiente do work-order e no
 seu Secret Kubernetes pelo CD dele; ela não precisa ser versionada para verificar

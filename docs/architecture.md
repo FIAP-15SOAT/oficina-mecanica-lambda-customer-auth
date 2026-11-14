@@ -283,10 +283,11 @@ O desenho acima descreve o código. Esta seção descreve onde ele executa.
 
 ![Diagrama de arquitetura: o cliente chama por HTTPS o API Gateway, que publica
 POST /customer-auth/login e invoca a função Lambda; a função executa nas duas
-subnets privadas da VPC 10.0.0.0/16, com security group próprio e interface de
-rede criada na partida a frio, alcança o Amazon RDS PostgreSQL 16 na porta 5432
-e o Secrets Manager pelo NAT Gateway, e emite log para o CloudWatch Logs com
-retenção de 14 dias](diagrams/infrastructure.png)
+subnets privadas da VPC 10.0.0.0/16, com security group próprio e interfaces de
+rede compartilhadas (ENIs Hyperplane), alcança pelo NLB interno do cluster
+Kubernetes o Identity na porta 8081 e o work-order na porta 80, lê a chave de
+assinatura no Secrets Manager pelo NAT Gateway e emite log para o CloudWatch
+Logs com retenção de 14 dias](diagrams/infrastructure.png)
 
 **Rede.** A função é anexada às subnets privadas da rede da solução, com grupo de
 segurança próprio, porque o NLB que dá acesso ao Identity e ao work-order é

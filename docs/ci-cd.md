@@ -14,7 +14,9 @@ análise estática e entrega.
 
 ![CI Workflow: os seis jobs de validação — Lint, Type Check, Unit Tests, E2E
 Tests, Package e Terraform Validation — executam em paralelo a partir do push e
-convergem no job Open Pull Request, que abre o PR para main](diagrams/ci-workflow.png)
+convergem no job Open Pull Request, que abre o PR para main; o E2E Tests tem
+três steps: checkout, Setup CI e os testes contra stubs HTTP do Identity e do
+work-order](diagrams/ci-workflow.png)
 
 ## Integração contínua
 
@@ -202,7 +204,10 @@ aguarda o portão e reprova quando ele reprova.
 ## Entrega contínua
 
 ![CD Workflow: gatilho em push na main ou workflow_dispatch, portão de entrada
-por branch e interruptor, e os jobs Deploy Lambda (13 steps) e Post-Deploy Gates (3 steps), ligados por needs: deploy](diagrams/cd-workflow.png)
+por branch e interruptor, e os jobs Deploy Lambda (14 steps) e Post-Deploy Gates
+(4 steps: credenciais AWS e os três portões — invocação direta e rota pública
+com CPF inexistente, que exigem 401, e login do cliente semeado, que exige 200
+e o token aceito pelo work-order), ligados por needs: deploy](diagrams/cd-workflow.png)
 
 ### Portões de entrada
 
