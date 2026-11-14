@@ -1,28 +1,26 @@
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 
-import { discardComposition, getBaseLogger, getDependencies } from '../../../src/bootstrap';
+import { getBaseLogger, getDependencies } from '../../../src/bootstrap';
 import { handler, warmUp } from '../../../src/handler';
-import { DatabaseOperationException } from '@infrastructure/exceptions/database-operation.exception';
+import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 import { TokenSigningException } from '@infrastructure/exceptions/token-signing.exception';
 
+import { FORMATTED_CPF, VALID_CPF } from '../../helpers/auth-mock.factory';
 import {
-  createMockCustomerUser,
-  FORMATTED_CPF,
-  SUBJECT_ID,
-  VALID_CPF,
-} from '../../helpers/auth-mock.factory';
+  readCustomerAuthenticationFixture,
+  readUserCustomersFixture,
+} from '../../helpers/contract-fixtures';
 import { createMockDependencies, MockDependencies } from '../../helpers/dependencies-mock.factory';
 import { buildContext, buildEvent, buildJsonEvent } from '../../helpers/platform-event.factory';
 
 jest.mock('../../../src/bootstrap', () => ({
   getDependencies: jest.fn(),
   getBaseLogger: jest.fn(),
-  discardComposition: jest.fn(),
 }));
 
 const dependenciesMock = getDependencies as jest.MockedFunction<typeof getDependencies>;
 const baseLoggerMock = getBaseLogger as jest.MockedFunction<typeof getBaseLogger>;
-const discardCompositionMock = discardComposition as jest.MockedFunction<typeof discardComposition>;
+const USER_ID = readCustomerAuthenticationFixture().userId;
 const CREDENTIAL = { cpf: FORMATTED_CPF, password: 'Senha@123' };
 
 function bodyOf(response: { body?: string }) {
@@ -30,9 +28,9 @@ function bodyOf(response: { body?: string }) {
 }
 
 /**
- * O aquecimento existe para que a primeira credencial real nao pague segredos,
- * PEM e handshake. Fora da plataforma ele nao age: um efeito de importacao
- * surpreenderia teste e script.
+ * Warm-up exists so the first real credential does not pay for secrets, PEM
+ * and handshake. Outside the platform it does nothing: an import side effect
+ * would surprise tests and scripts.
  */
 describe('warmUp', () => {
   const original = process.env.AWS_LAMBDA_FUNCTION_NAME;
@@ -81,15 +79,18 @@ describe('handler', () => {
   beforeEach(() => {
     mocks = createMockDependencies();
     dependenciesMock.mockReset();
-    discardCompositionMock.mockReset();
     dependenciesMock.mockResolvedValue(mocks.dependencies);
     baseLoggerMock.mockReturnValue(mocks.capture.adapter);
   });
 
   describe('success path', () => {
     beforeEach(() => {
-      mocks.identityRepository.findByCpf.mockResolvedValue(createMockCustomerUser());
-      mocks.hashService.compare.mockResolvedValue(true);
+      mocks.identityCustomerCredentialsGateway.authenticate.mockResolvedValue(
+        readCustomerAuthenticationFixture(),
+      );
+      mocks.workOrderUserCustomersGateway.findActiveByUserId.mockResolvedValue(
+        readUserCustomersFixture(),
+      );
     });
 
     it('should answer 200 with the token envelope', async () => {
@@ -101,7 +102,7 @@ describe('handler', () => {
       });
     });
 
-    /** O corpo carrega um bearer token: nenhum intermediário deve retê-lo. */
+    /** The body carries a bearer token: no intermediary may keep it. */
     it('should forbid caching the response that carries the token', async () => {
       const response = await handler(buildJsonEvent(CREDENTIAL), buildContext());
 
@@ -112,7 +113,7 @@ describe('handler', () => {
       const response = await handler(buildJsonEvent(CREDENTIAL), buildContext());
 
       expect(String(response.body)).not.toContain(VALID_CPF);
-      expect(String(response.body)).not.toContain(SUBJECT_ID);
+      expect(String(response.body)).not.toContain(USER_ID);
     });
   });
 
@@ -129,8 +130,12 @@ describe('handler', () => {
     });
 
     it('should decode a base64 encoded body', async () => {
-      mocks.identityRepository.findByCpf.mockResolvedValue(createMockCustomerUser());
-      mocks.hashService.compare.mockResolvedValue(true);
+      mocks.identityCustomerCredentialsGateway.authenticate.mockResolvedValue(
+        readCustomerAuthenticationFixture(),
+      );
+      mocks.workOrderUserCustomersGateway.findActiveByUserId.mockResolvedValue(
+        readUserCustomersFixture(),
+      );
 
       const event = buildEvent({
         body: Buffer.from(JSON.stringify(CREDENTIAL)).toString('base64'),
@@ -141,14 +146,18 @@ describe('handler', () => {
     });
 
     /**
-     * A montagem da linha de atendimento não pode alterar a resposta — a spec
-     * de logging proíbe. Um evento sem `requestContext` chegava aqui com a
-     * resposta já construída e derrubava a invocação com um `TypeError`,
-     * entregando erro de plataforma no lugar do envelope documentado.
+     * Building the invocation line must not change the response — the logging
+     * spec forbids it. An event without `requestContext` reached here with the
+     * response already built and brought the invocation down with a `TypeError`,
+     * delivering a platform error instead of the documented envelope.
      */
     it('should answer normally when the event carries no requestContext', async () => {
-      mocks.identityRepository.findByCpf.mockResolvedValue(createMockCustomerUser());
-      mocks.hashService.compare.mockResolvedValue(true);
+      mocks.identityCustomerCredentialsGateway.authenticate.mockResolvedValue(
+        readCustomerAuthenticationFixture(),
+      );
+      mocks.workOrderUserCustomersGateway.findActiveByUserId.mockResolvedValue(
+        readUserCustomersFixture(),
+      );
 
       const { requestContext: _absent, ...event } = buildJsonEvent(CREDENTIAL);
 
@@ -161,8 +170,6 @@ describe('handler', () => {
     });
 
     it('should answer 401 for a rejected credential', async () => {
-      mocks.identityRepository.findByCpf.mockResolvedValue(createMockCustomerUser());
-
       const response = await handler(buildJsonEvent(CREDENTIAL), buildContext());
 
       expect(response.statusCode).toBe(401);
@@ -173,76 +180,58 @@ describe('handler', () => {
       });
     });
 
-    it('should answer 503 when the database is unavailable', async () => {
-      mocks.identityRepository.findByCpf.mockRejectedValue(
-        new DatabaseOperationException('busca', { cause: new Error('timeout') }),
-      );
-
-      expect((await handler(buildJsonEvent(CREDENTIAL), buildContext())).statusCode).toBe(503);
-      expect(discardCompositionMock).not.toHaveBeenCalled();
-    });
-
-    it('should discard the memoized composition when the database refuses authentication', async () => {
-      mocks.identityRepository.findByCpf.mockRejectedValue(
-        new DatabaseOperationException('busca', {
-          cause: Object.assign(new Error('password authentication failed'), { code: '28P01' }),
+    it('should answer 503 when an internal call fails', async () => {
+      mocks.identityCustomerCredentialsGateway.authenticate.mockRejectedValue(
+        new ServiceIntegrationException('POST /internal/customer-authentications', undefined, {
+          cause: new Error('connect ECONNREFUSED 10.0.3.17:8081'),
         }),
       );
 
       const response = await handler(buildJsonEvent(CREDENTIAL), buildContext());
 
-      expect(discardCompositionMock).toHaveBeenCalledTimes(1);
-
-      // A resposta ao chamador não muda: a causa não vaza.
       expect(response.statusCode).toBe(503);
+
       expect(bodyOf(response)).toEqual({
         statusCode: 503,
         error: 'Service Unavailable',
         message: 'Serviço temporariamente indisponível',
       });
+
+      expect(String(response.body)).not.toContain('10.0.3.17');
+      expect(String(response.body)).not.toContain('8081');
+      expect(String(response.body)).not.toContain('/internal/');
     });
 
-    it('should re-read the credential on the invocation after an authentication refusal', async () => {
-      mocks.identityRepository.findByCpf.mockRejectedValueOnce(
-        new DatabaseOperationException('busca', {
-          cause: Object.assign(new Error('password authentication failed'), { code: '28P01' }),
+    it('should hand the request id and a traceparent to the composition', async () => {
+      await handler(
+        buildJsonEvent(CREDENTIAL, {
+          headers: { 'content-type': 'application/json', 'x-request-id': 'req-do-gateway' },
         }),
+        buildContext(),
       );
 
-      await handler(buildJsonEvent(CREDENTIAL), buildContext());
-
-      expect(discardCompositionMock).toHaveBeenCalledTimes(1);
-      mocks.identityRepository.findByCpf.mockResolvedValue(null);
-
-      const second = await handler(buildJsonEvent(CREDENTIAL), buildContext());
-
-      expect(dependenciesMock).toHaveBeenCalledTimes(2);
-      expect(second.statusCode).toBe(401);
-    });
-
-    /**
-     * Uma falha de composição não pode disparar o descarte: nada foi memoizado,
-     * e a causa não é a credencial do banco.
-     */
-    it('should not discard the composition when the failure happened before composing', async () => {
-      dependenciesMock.mockRejectedValueOnce(
-        Object.assign(new Error('password authentication failed'), { code: '28P01' }),
-      );
-
-      expect((await handler(buildJsonEvent(CREDENTIAL), buildContext())).statusCode).toBe(500);
-      expect(discardCompositionMock).not.toHaveBeenCalled();
+      expect(mocks.dependencies.createController).toHaveBeenCalledWith(expect.anything(), {
+        requestId: 'req-do-gateway',
+        traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/),
+      });
     });
 
     it('should answer 500 when the token cannot be signed', async () => {
-      mocks.identityRepository.findByCpf.mockResolvedValue(createMockCustomerUser());
-      mocks.hashService.compare.mockResolvedValue(true);
+      mocks.identityCustomerCredentialsGateway.authenticate.mockResolvedValue(
+        readCustomerAuthenticationFixture(),
+      );
+      mocks.workOrderUserCustomersGateway.findActiveByUserId.mockResolvedValue(
+        readUserCustomersFixture(),
+      );
       mocks.tokenIssuer.issueAccessToken.mockRejectedValue(new TokenSigningException('kid'));
 
       expect((await handler(buildJsonEvent(CREDENTIAL), buildContext())).statusCode).toBe(500);
     });
 
     it('should answer 500 for an unforeseen failure', async () => {
-      mocks.identityRepository.findByCpf.mockRejectedValue(new RangeError('inesperado'));
+      mocks.identityCustomerCredentialsGateway.authenticate.mockRejectedValue(
+        new RangeError('inesperado'),
+      );
 
       const response = await handler(buildJsonEvent(CREDENTIAL), buildContext());
 
@@ -251,9 +240,9 @@ describe('handler', () => {
     });
 
     /**
-     * A composição acontece na primeira invocação. Se ela falhar, o cliente
-     * precisa receber o envelope documentado — deixar a exceção escapar entrega
-     * um erro de plataforma, que não está no contrato.
+     * The composition happens on the first invocation. If it fails, the client
+     * must receive the documented envelope — letting the exception escape delivers
+     * a platform error, which is not in the contract.
      */
     it('should answer with the documented envelope when the composition fails', async () => {
       dependenciesMock.mockRejectedValue(new Error('secrets manager indisponível'));

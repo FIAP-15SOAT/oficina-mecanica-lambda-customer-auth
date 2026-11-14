@@ -1,55 +1,51 @@
-import type { Pool } from 'pg';
-
 import { ILogger } from '@application/ports/output/logger.service.interface';
 import { AuthenticateCustomerUseCase } from '@application/use-cases/auth/authenticate-customer.use-case';
 import { CustomerAuthController } from '@interface-adapters/auth/customer-auth.controller';
-import { InvocationTimings } from '@infrastructure/observability/invocation-timings';
+import { InternalCallContext } from '@infrastructure/clients/internal-http-client';
 
 import type { Dependencies } from '../../src/bootstrap';
 import { captureLog, LogCapture } from './log-capture';
 import {
-  createMockHashService,
-  createMockIdentityRepository,
+  createMockIdentityCustomerCredentialsGateway,
   createMockTokenIssuer,
+  createMockWorkOrderUserCustomersGateway,
 } from './auth-mock.factory';
 
 export interface MockDependencies {
-  dependencies: Dependencies;
+  dependencies: jest.Mocked<Dependencies>;
   capture: LogCapture;
-  identityRepository: ReturnType<typeof createMockIdentityRepository>;
-  hashService: ReturnType<typeof createMockHashService>;
+  identityCustomerCredentialsGateway: ReturnType<
+    typeof createMockIdentityCustomerCredentialsGateway
+  >;
+  workOrderUserCustomersGateway: ReturnType<typeof createMockWorkOrderUserCustomersGateway>;
   tokenIssuer: ReturnType<typeof createMockTokenIssuer>;
 }
 
 export function createMockDependencies(): MockDependencies {
   const capture = captureLog();
-  const timings = new InvocationTimings();
-
-  const identityRepository = createMockIdentityRepository();
-  const hashService = createMockHashService();
+  const identityCustomerCredentialsGateway = createMockIdentityCustomerCredentialsGateway();
+  const workOrderUserCustomersGateway = createMockWorkOrderUserCustomersGateway();
   const tokenIssuer = createMockTokenIssuer();
 
-  const dependencies: Dependencies = {
-    timings,
-    pool: {} as Pool,
-    createController: (logger: ILogger) =>
-      new CustomerAuthController(
-        new AuthenticateCustomerUseCase(
-          {
-            findByCpf: (cpf) =>
-              timings.measure('queryDurationMs', () => identityRepository.findByCpf(cpf)),
-          },
-          {
-            compare: (value, hashed) =>
-              timings.measure('passwordVerificationDurationMs', () =>
-                hashService.compare(value, hashed),
-              ),
-          },
-          tokenIssuer,
-          logger,
+  const dependencies: jest.Mocked<Dependencies> = {
+    createController: jest.fn(
+      (logger: ILogger, _callContext: InternalCallContext) =>
+        new CustomerAuthController(
+          new AuthenticateCustomerUseCase(
+            identityCustomerCredentialsGateway,
+            workOrderUserCustomersGateway,
+            tokenIssuer,
+            logger,
+          ),
         ),
-      ),
+    ),
   };
 
-  return { dependencies, capture, identityRepository, hashService, tokenIssuer };
+  return {
+    dependencies,
+    capture,
+    identityCustomerCredentialsGateway,
+    workOrderUserCustomersGateway,
+    tokenIssuer,
+  };
 }

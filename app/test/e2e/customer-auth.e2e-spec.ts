@@ -1,15 +1,17 @@
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
 import { decodeProtectedHeader, importSPKI, jwtVerify } from 'jose';
-import { Pool } from 'pg';
 
 import { DECLARED_FIELD_NAMES } from '@infrastructure/logging/field-registry';
 
-import { closeDependencies, resetDependencies } from '../../src/bootstrap';
+import { resetDependencies } from '../../src/bootstrap';
 import { handler } from '../../src/handler';
+import {
+  readCustomerAuthenticationFixture,
+  readUserCustomersFixture,
+} from '../helpers/contract-fixtures';
+import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
 import { buildContext, buildJsonEvent } from '../helpers/platform-event.factory';
-import { MigratedDatabase, startMigratedDatabase } from './database.harness';
-import { clearIdentity, seedIdentity } from './identity.fixture';
 
 const mockLogLines: string[] = [];
 
@@ -24,23 +26,25 @@ jest.mock('@infrastructure/logging/logging-destination', () => ({
 }));
 
 const PASSWORD = 'Senha@123';
-const PASSWORD_HASH = '$2b$12$p6XVg4lX9xZMx5lcA6Id3eXPSczStxFpu6y8gm9fz5W.shfjpI9tK';
 
 const CPF_GRANTED = '12345678909';
-const CPF_INACTIVE_USER = '52998224725';
 const CPF_NO_LINK = '11144477735';
-const CPF_ONLY_INACTIVE_CUSTOMERS = '01234567890';
 const CPF_ABSENT = '98765432100';
 
 const ISSUER = 'oficina-customer-auth';
 const AUDIENCE = 'oficina-api';
 const KEY_ID = 'customer-auth-test';
 
+const IDENTITY_ROUTE = 'POST /internal/customer-authentications';
+
 const { privateKey, publicKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
   publicKeyEncoding: { type: 'spki', format: 'pem' },
 });
+
+const { userId } = readCustomerAuthenticationFixture();
+const userCustomersRoute = `GET /internal/users/${userId}/customers`;
 
 async function login(body: Record<string, unknown>) {
   const response = await handler(buildJsonEvent(body), buildContext());
@@ -51,54 +55,32 @@ async function login(body: Record<string, unknown>) {
   };
 }
 
-describe('external authentication against the real API schema', () => {
-  let database: MigratedDatabase;
-  let pool: Pool;
+function parsedLogLines(): Record<string, unknown>[] {
+  return mockLogLines
+    .join('')
+    .split('\n')
+    .filter((line) => line.trim().startsWith('{'))
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+describe('customer authentication against the owners stubs', () => {
+  let internalServicesStub: InternalServicesStub;
   const originalEnv = process.env;
 
   beforeAll(async () => {
-    database = await startMigratedDatabase();
+    internalServicesStub = await startInternalServicesStub();
 
-    pool = new Pool({
-      host: database.host,
-      port: database.port,
-      database: database.database,
-      user: database.username,
-      password: database.password,
-      max: 1,
-    });
-
-    await clearIdentity(pool);
-    await seedIdentity(pool, {
-      cpf: CPF_GRANTED,
-      passwordHash: PASSWORD_HASH,
-      customers: [{ active: false }, { active: true }],
-    });
-    await seedIdentity(pool, {
-      cpf: CPF_INACTIVE_USER,
-      passwordHash: PASSWORD_HASH,
-      userActive: false,
-      customers: [{ active: true }],
-    });
-    await seedIdentity(pool, { cpf: CPF_NO_LINK, passwordHash: PASSWORD_HASH, customers: [] });
-    await seedIdentity(pool, {
-      cpf: CPF_ONLY_INACTIVE_CUSTOMERS,
-      passwordHash: PASSWORD_HASH,
-      customers: [{ active: false }],
-    });
+    internalServicesStub.credentials.set(CPF_GRANTED, { password: PASSWORD, userId });
+    internalServicesStub.credentials.set(CPF_NO_LINK, { password: PASSWORD, userId: randomUUID() });
+    internalServicesStub.userCustomers.set(userId, readUserCustomersFixture());
 
     process.env = {
       ...originalEnv,
       NODE_ENV: 'test',
       LOG_LEVEL: 'info',
-      DATABASE_HOST: database.host,
-      DATABASE_PORT: String(database.port),
-      DATABASE_NAME: database.database,
-      DATABASE_SSL: 'false',
-      DATABASE_SECRET: JSON.stringify({
-        username: database.username,
-        password: database.password,
-      }),
+      // The trailing slash is how a local .env often writes it.
+      IDENTITY_INTERNAL_URL: `${internalServicesStub.url}/`,
+      WORK_ORDER_INTERNAL_URL: internalServicesStub.url,
       CUSTOMER_JWT_PRIVATE_KEY: privateKey,
       CUSTOMER_JWT_ISSUER: ISSUER,
       CUSTOMER_JWT_AUDIENCE: AUDIENCE,
@@ -106,15 +88,18 @@ describe('external authentication against the real API schema', () => {
     };
 
     resetDependencies();
-  }, 300_000);
+  });
+
+  beforeEach(() => {
+    internalServicesStub.requests.length = 0;
+    internalServicesStub.nextResponses.clear();
+  });
 
   afterAll(async () => {
-    await closeDependencies();
     resetDependencies();
     process.env = originalEnv;
 
-    await pool?.end();
-    await database?.stop();
+    await internalServicesStub?.close();
   });
 
   describe('valid credential', () => {
@@ -136,6 +121,7 @@ describe('external authentication against the real API schema', () => {
       });
 
       expect(Object.keys(verified.payload).sort()).toEqual(['aud', 'exp', 'iat', 'iss', 'sub']);
+      expect(verified.payload.sub).toBe(userId);
       expect(decodeProtectedHeader(accessToken).kid).toBe(KEY_ID);
       expect(JSON.stringify(verified.payload)).not.toContain(CPF_GRANTED);
     });
@@ -146,31 +132,25 @@ describe('external authentication against the real API schema', () => {
   });
 
   describe('credential rejection', () => {
-    it('should answer identically for the four rejection causes', async () => {
+    it('should answer identically for an unknown cpf, a wrong password and a user without an active customer', async () => {
       const responses = await Promise.all([
         login({ cpf: CPF_ABSENT, password: PASSWORD }),
         login({ cpf: CPF_GRANTED, password: 'senha-errada' }),
-        login({ cpf: CPF_INACTIVE_USER, password: PASSWORD }),
         login({ cpf: CPF_NO_LINK, password: PASSWORD }),
       ]);
 
       responses.forEach((response) => expect(response.statusCode).toBe(401));
       expect(new Set(responses.map((response) => JSON.stringify(response))).size).toBe(1);
     });
-
-    it('should reject a user whose linked customers are all inactive', async () => {
-      expect(
-        (await login({ cpf: CPF_ONLY_INACTIVE_CUSTOMERS, password: PASSWORD })).statusCode,
-      ).toBe(401);
-    });
   });
 
   describe('invalid input', () => {
-    it('should refuse an invalid cpf before reaching the database', async () => {
+    it('should refuse an invalid cpf without calling the owners', async () => {
       const { statusCode, body } = await login({ cpf: '111.111.111-11', password: PASSWORD });
 
       expect(statusCode).toBe(400);
       expect(body).toEqual({ statusCode: 400, error: 'Bad Request', message: 'CPF inválido' });
+      expect(internalServicesStub.requests).toEqual([]);
     });
 
     it('should refuse a request without the required fields', async () => {
@@ -178,73 +158,95 @@ describe('external authentication against the real API schema', () => {
     });
   });
 
-  /**
-   * O que só este nível prova: a consulta desta função corresponde ao schema que
-   * a API mantém. A unicidade do CPF é premissa da leitura — sem ela, `rows[0]`
-   * escolheria em silêncio entre linhas concorrentes, e o PostgreSQL não promete
-   * ordem estável sem `ORDER BY`.
-   */
-  describe('contract with the schema owned by the API', () => {
-    it.each([
-      ['users', 'cpf'],
-      ['users', 'password_hash'],
-      ['users', 'is_active'],
-      ['customers', 'is_active'],
-      ['user_customers', 'user_id'],
-      ['user_customers', 'customer_id'],
-    ])('should carry the column %s.%s the query depends on', async (table, column) => {
-      const { rows } = await pool.query<{ exists: boolean }>(
-        `SELECT EXISTS (
-           SELECT 1 FROM information_schema.columns
-           WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
-         ) AS exists`,
-        [table, column],
+  describe('calls to the owners', () => {
+    it('should send the same request id and trace id to both owners and log that trace id', async () => {
+      await login({ cpf: CPF_GRANTED, password: PASSWORD });
+
+      const [identityRequest, workOrderRequest] = internalServicesStub.requests;
+      const traceId = String(identityRequest.headers.traceparent).split('-')[1];
+
+      expect(identityRequest.headers['x-request-id']).toBe(buildContext().awsRequestId);
+
+      expect(workOrderRequest.headers['x-request-id']).toBe(
+        identityRequest.headers['x-request-id'],
       );
 
-      expect(rows[0].exists).toBe(true);
+      expect(identityRequest.headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+      expect(workOrderRequest.headers.traceparent).toBe(identityRequest.headers.traceparent);
+
+      expect(parsedLogLines().map((line) => line.trace_id)).toEqual(
+        expect.arrayContaining([traceId]),
+      );
     });
 
-    it('should enforce the uniqueness of users.cpf the read relies on', async () => {
-      const { rows } = await pool.query<{ exists: boolean }>(
-        `SELECT EXISTS (
-           SELECT 1
-           FROM pg_index i
-           JOIN pg_class t ON t.oid = i.indrelid
-           JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY (i.indkey)
-           WHERE t.relname = 'users' AND a.attname = 'cpf'
-             AND i.indisunique AND i.indnatts = 1
-         ) AS exists`,
-      );
+    it('should ask each owner for a new connection', async () => {
+      await login({ cpf: CPF_GRANTED, password: PASSWORD });
 
-      expect(rows[0].exists).toBe(true);
+      expect(internalServicesStub.requests.map((request) => request.headers.connection)).toEqual([
+        'close',
+        'close',
+      ]);
     });
 
-    /**
-     * A comparação de bcrypt lança quando o hash armazenado não é texto. Uma
-     * linha com `password_hash` nulo responderia `500` em vez de `401`, e a
-     * indistinguibilidade das quatro causas de recusa — a propriedade central
-     * desta função — deixaria de valer justamente para ela.
-     */
-    it('should keep users.password_hash non-nullable, the premise of the uniform 401', async () => {
-      const { rows } = await pool.query<{ is_nullable: string }>(
-        `SELECT is_nullable
-           FROM information_schema.columns
-          WHERE table_schema = 'public'
-            AND table_name = 'users'
-            AND column_name = 'password_hash'`,
-      );
+    it('should reach the owner routes when the internal url ends with a slash', async () => {
+      await login({ cpf: CPF_GRANTED, password: PASSWORD });
 
-      expect(rows[0].is_nullable).toBe('NO');
+      expect(internalServicesStub.requests.map((request) => request.path)).toEqual([
+        '/internal/customer-authentications',
+        `/internal/users/${userId}/customers`,
+      ]);
+    });
+
+    it('should answer 503 when the identity does not answer within 2 s', async () => {
+      internalServicesStub.nextResponses.set(IDENTITY_ROUTE, {
+        status: 200,
+        body: { data: { userId } },
+        delayMs: 2500,
+      });
+
+      expect((await login({ cpf: CPF_GRANTED, password: PASSWORD })).statusCode).toBe(503);
+    });
+
+    it('should answer 503 when the identity answers a redirect', async () => {
+      internalServicesStub.nextResponses.set(IDENTITY_ROUTE, {
+        status: 302,
+        headers: { location: '/internal/elsewhere' },
+      });
+
+      expect((await login({ cpf: CPF_GRANTED, password: PASSWORD })).statusCode).toBe(503);
+    });
+
+    it('should answer 503 when the identity fails', async () => {
+      internalServicesStub.nextResponses.set(IDENTITY_ROUTE, { status: 500 });
+
+      expect((await login({ cpf: CPF_GRANTED, password: PASSWORD })).statusCode).toBe(503);
+    });
+
+    it('should answer 503 when the work order fails', async () => {
+      internalServicesStub.nextResponses.set(userCustomersRoute, { status: 500 });
+
+      expect((await login({ cpf: CPF_GRANTED, password: PASSWORD })).statusCode).toBe(503);
+    });
+  });
+
+  describe('work order unreachable', () => {
+    beforeAll(async () => {
+      const closedStub = await startInternalServicesStub();
+
+      await closedStub.close();
+
+      process.env.WORK_ORDER_INTERNAL_URL = closedStub.url;
+      resetDependencies();
+    });
+
+    it('should answer 503 when the work order refuses the connection', async () => {
+      expect((await login({ cpf: CPF_GRANTED, password: PASSWORD })).statusCode).toBe(503);
     });
   });
 
   describe('logs', () => {
     it('should keep every emitted key inside the declared dictionary', () => {
-      const emitted = mockLogLines
-        .join('')
-        .split('\n')
-        .filter((line) => line.trim().startsWith('{'))
-        .flatMap((line) => Object.keys(JSON.parse(line) as Record<string, unknown>));
+      const emitted = parsedLogLines().flatMap((line) => Object.keys(line));
 
       expect([...new Set(emitted)].filter((key) => !DECLARED_FIELD_NAMES.has(key))).toEqual([]);
     });

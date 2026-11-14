@@ -4,7 +4,7 @@ A stack desta função vive em `infra/`, no mesmo repositório do código: o que
 muda junto fica junto, e a configuração da função passa pelo mesmo ciclo de
 revisão que ela.
 
-![Arquitetura: API Gateway invoca a Lambda; ENIs Hyperplane permitem acesso privado ao RDS e ao NAT para Secrets Manager; logs no CloudWatch](diagrams/infrastructure.png)
+![Arquitetura: o API Gateway invoca a função Lambda, que executa nas subnets privadas da VPC; por interfaces de rede compartilhadas (ENIs Hyperplane) ela alcança o NLB interno do cluster Kubernetes, na porta 8081 para o Identity e 80 para o work-order, e, pelo NAT Gateway, o Secrets Manager; os logs vão para o CloudWatch Logs](diagrams/infrastructure.png)
 
 ## O que esta stack provisiona
 
@@ -16,22 +16,25 @@ revisão que ela.
 | Grupo de log da função | **este repositório** | Sem declaração, a plataforma o cria com retenção indefinida |
 | Contêiner do segredo da chave privada de assinatura | **este repositório** | O material é da função; o **valor** é escrito pela entrega |
 | Rede, subnets, gateway de tradução | `oficina-mecanica-infra-base` | Consumido por leitura de state remoto |
-| Banco, seu grupo de segurança e o segredo da credencial | `oficina-mecanica-infra-database-work-order` | Quem é dono do recurso é dono da credencial |
+| Cluster Kubernetes e NLB interno (Network Load Balancer, o balanceador de rede que dá acesso aos serviços do cluster) | `oficina-mecanica-infra-k8s` | O endereço e as portas do NLB são consumidos por leitura de state remoto |
+| Identity (usuários e senhas) e work-order (clientes e vínculos) | os repositórios de cada serviço | A função só os chama, pelas rotas internas atrás do NLB |
 | API Gateway, rota e limitação de frequência | `oficina-mecanica-api-gateway` | A rota é publicada lá; esta stack apenas autoriza a invocação |
-| Cluster, registro de imagens e balanceador | `oficina-mecanica-infra-k8s` | Não participa desta função |
-| Bucket do state | compartilhado, pré-existente | Já existe e serve as seis stacks Terraform. **Esta acrescenta apenas uma chave** |
+| Bucket do state | compartilhado, pré-existente | Já existe e serve as stacks Terraform da solução. **Esta acrescenta apenas uma chave** |
 | Qualquer role de identidade | **ninguém** — o laboratório não permite criar roles | A role de execução é lida por fonte de dados, nunca criada |
 
 ## Estado remoto
 
-Endereço, porta e nome do banco, identificadores de subnet e o identificador de
-execução da API vêm do state das stacks que os possuem. Nada disso é digitado
-como variável.
+O state remoto é o arquivo de estado que o Terraform de outra stack grava no
+bucket S3 compartilhado; esta stack lê os outputs dele por
+`terraform_remote_state`. Identificadores de subnet, o endereço e as portas do
+NLB (Network Load Balancer, o balanceador de rede interno do cluster Kubernetes)
+e o identificador de execução do API Gateway vêm do state das stacks que os
+possuem. Nada disso é digitado como variável.
 
 | Origem | Chave do state | O que esta stack lê |
 | --- | --- | --- |
 | `infra-base` | `infra/prod-simulated/infra-base/terraform.tfstate` | `vpc_id`, `private_subnet_ids` |
-| `database` | `infra/prod-simulated/infra-database-work-order/terraform.tfstate` | `db_host`, `db_port`, `db_name`, `db_credentials_secret_arn` |
+| `k8s` | `infra/prod-simulated/infra-k8s/terraform.tfstate` | `nlb_dns_name`, `service_listener_ports` (a porta de cada serviço no NLB: `identity` 8081, `work-order` 80) |
 | `gateway` | `infra/prod-simulated/api-gateway/terraform.tfstate` | `api_execution_arn`, `api_endpoint` |
 
 ## Backend
@@ -48,7 +51,7 @@ O `backend.tf` não declara o bucket: os workflows passam
 variável de Actions da organização `TF_STATE_BUCKET`.
 
 Cifração em repouso e trava por arquivo de bloqueio no próprio armazenamento de
-objetos — as mesmas opções das outras cinco stacks, sem tabela auxiliar.
+objetos — as mesmas opções das demais stacks, sem tabela auxiliar.
 
 O arquivo de bloqueio de provedores (`.terraform.lock.hcl`) é versionado, como
 nas demais stacks da solução, e cobre `linux_amd64` — a esteira —, `windows_amd64`
@@ -57,17 +60,18 @@ e `darwin_arm64` — as estações de trabalho.
 ## Ordem de aplicação
 
 ```
-infra-base  ──→  database  ────────────────┐
-            └─→  k8s  ──→  gateway  ──────┴─→  lambda-customer-auth
+infra-base  ──→  k8s  ──→  gateway  ──→  lambda-customer-auth
 ```
 
 A autorização de invocação declarada aqui restringe pelo identificador de
 execução da API, lido do state remoto daquela stack: o API Gateway vem antes.
 
-**O segredo da credencial do banco é pré-requisito, não consequência.** A stack
-de banco expõe o identificador desse segredo pelo output
-`db_credentials_secret_arn`. Sem ele, a leitura do state remoto reprova por
-atributo inexistente e **nenhum recurso desta stack chega a ser planejado**.
+**O NLB é pré-requisito, não consequência.** A stack do cluster expõe o endereço
+e as portas dele pelos outputs `nlb_dns_name` e `service_listener_ports`. Sem
+eles, a leitura do state remoto reprova por atributo inexistente e **nenhum
+recurso desta stack chega a ser planejado**. O Identity e o work-order não
+entram na ordem de aplicação: a stack não depende deles, mas a função só aceita
+logins com os dois no ar.
 
 ## Configuração da função
 
@@ -75,14 +79,14 @@ atributo inexistente e **nenhum recurso desta stack chega a ser planejado**.
 | --- | --- | --- |
 | Ambiente de execução | `nodejs24.x` | Versão de longo prazo; casa com o motor declarado pelo projeto e com o alvo da construção |
 | Ponto de entrada | `handler.handler` | Arquivo único na raiz do pacote, saída da construção |
-| Arquitetura | a padrão | A alternativa é ~20% mais barata e o algoritmo de hash é puro, mas mudaria o endereço da camada de coleta. Uma peça móvel a menos vale mais que a diferença |
-| Memória | **1024 MB** | A memória também controla a CPU disponível; verificar senha depende de CPU. O efeito em latência e custo deve ser medido, não é proporcionalidade garantida. É valor de partida: a linha de invocação reporta a duração da verificação, e o ajuste fino se faz com esse dado |
-| Tempo limite | **15 s** | O teto de integração do API Gateway é 30 s. Os limites internos somam ~8 s, então 15 s dá quase o dobro de folga e **reduz pela metade** o tempo que uma invocação pendurada retém um lugar da concorrência reservada |
-| Concorrência reservada | **10**, por variável | Limita invocações simultâneas; cada ambiente usa pool `max: 1`. O orçamento inclui API, sessões administrativas e conexões ociosas — ver [Banco](database.md#orçamento-de-conexões) |
+| Arquitetura | a padrão | A alternativa é ~20% mais barata e o pacote não tem código nativo, mas mudaria o endereço da camada de coleta. Uma peça móvel a menos vale mais que a diferença |
+| Memória | **256 MB** | A memória também controla a CPU disponível. A invocação faz duas chamadas de rede e uma assinatura RS256; a importação dos módulos e da chave roda na inicialização do ambiente, que recebe CPU cheia. A verificação de senha, que dependia de CPU, é feita pelo Identity |
+| Tempo limite | **15 s** | O teto de integração do API Gateway é 30 s. Os limites internos somam ~4 s (duas chamadas de até 2 s), então 15 s deixa folga e **reduz pela metade** o tempo que uma invocação pendurada retém um lugar da concorrência reservada |
+| Concorrência reservada | **10**, por variável | Limita invocações simultâneas e, com elas, as verificações de senha que os logins pedem ao Identity, que roda com uma ou duas réplicas |
 | Formato de log | **texto** | O formato estruturado da plataforma **embrulha** a saída capturada num envelope próprio, quebrando o contrato de esquema fechado |
 | Retenção do grupo de log | 14 dias | Mesma do log de acesso do API Gateway |
 | Publicação de versão | ligada | Publica versão imutável quando há mudança versionável. Sem alias; Gateway e gates invocam `$LATEST` sem qualificador |
-| Rede | subnets privadas, grupo de segurança próprio | O banco não é publicamente acessível e aceita apenas origens da faixa da rede |
+| Rede | subnets privadas, grupo de segurança próprio | O NLB que dá acesso ao Identity e ao work-order é interno e só aceita tráfego de dentro da VPC |
 
 **A reserva de concorrência pode ser recusada pela conta.** A plataforma exige
 que sobrem ao menos cem execuções não reservadas, e contas novas recebem cota
@@ -92,14 +96,14 @@ de qualquer aplicação. O caminho de contorno é `lambda_reserved_concurrency =
 esse valor.
 
 O grupo de segurança não declara regra de ingresso: nada conecta na função — ela
-é invocada por chamada de serviço, não por rede. O egresso é liberado, e alcança
-o gerenciador de segredos e o destino de telemetria pelo gateway de tradução de
-rede que já existe nas rotas privadas, sem outro NAT criado aqui; continuam existindo cobrança de processamento e
+é invocada por chamada de serviço, não por rede. O egresso é liberado: alcança o
+NLB interno dentro da VPC, e o gerenciador de segredos e o destino de telemetria
+pelo gateway de tradução de rede (NAT) que já existe nas rotas privadas, sem outro NAT criado aqui; continuam existindo cobrança de processamento e
 transferência de dados e custos de Secrets Manager, logs e telemetria.
 
 ## Variáveis de entrada Terraform
 
-Dos 27 inputs, 24 têm default; os três `*_state_bucket` não têm e vêm de `TF_STATE_BUCKET` (workflow) ou do `export` local. Role, limites e nomes devem ser confrontados com a
+Dos 26 inputs, 23 têm default; os três `*_state_bucket` (`aws_base_state_bucket`, `k8s_state_bucket` e `gateway_state_bucket`) não têm e vêm de `TF_STATE_BUCKET` (workflow) ou do `export` local. Role, limites e nomes devem ser confrontados com a
 conta e os produtores dos states; o default não comprova disponibilidade cloud.
 
 | Variável | Descrição | Tipo | Padrão | Uso |
@@ -110,20 +114,19 @@ conta e os produtores dos states; o default não comprova disponibilidade cloud.
 | `aws_base_state_bucket` | Bucket do state de rede | `string` | — | Localiza o bucket S3 da stack consumida; não cria o bucket. Os workflows a preenchem com `TF_STATE_BUCKET`. |
 | `aws_base_state_key` | Chave do state de rede | `string` | `infra/prod-simulated/infra-base/terraform.tfstate` | Seleciona o objeto que publica VPC e subnets privadas. |
 | `aws_base_state_region` | Região do state de rede | `string` | `us-east-1` | Configura a leitura S3 do state correspondente. |
-| `database_state_bucket` | Bucket do state de banco | `string` | — | Localiza o bucket S3 da stack consumida; não cria o bucket. Os workflows a preenchem com `TF_STATE_BUCKET`. |
-| `database_state_key` | Chave do state de banco | `string` | `infra/prod-simulated/infra-database-work-order/terraform.tfstate` | Seleciona o objeto que publica host, porta, nome e ARN do segredo. |
-| `database_state_region` | Região do state de banco | `string` | `us-east-1` | Configura a leitura S3 do state correspondente. |
+| `k8s_state_bucket` | Bucket do state do cluster | `string` | — | Localiza o bucket S3 da stack consumida; não cria o bucket. Os workflows a preenchem com `TF_STATE_BUCKET`. |
+| `k8s_state_key` | Chave do state do cluster | `string` | `infra/prod-simulated/infra-k8s/terraform.tfstate` | Seleciona o objeto que publica o endereço e as portas do NLB interno. |
+| `k8s_state_region` | Região do state do cluster | `string` | `us-east-1` | Configura a leitura S3 do state correspondente. |
 | `gateway_state_bucket` | Bucket do state de gateway | `string` | — | Localiza o bucket S3 da stack consumida; não cria o bucket. Os workflows a preenchem com `TF_STATE_BUCKET`. |
 | `gateway_state_key` | Chave do state de gateway | `string` | `infra/prod-simulated/api-gateway/terraform.tfstate` | Seleciona o objeto que publica ARN de execução e endpoint público. |
 | `gateway_state_region` | Região do state de gateway | `string` | `us-east-1` | Configura a leitura S3 do state correspondente. |
 | `function_name` | Nome da função | `string` | `lbd-oficina-mecanica-customer-auth` | Configura a função, seu log group e a tag Name; deve coincidir com o nome configurado no gateway. |
 | `lambda_execution_role_name` | Nome de role existente | `string` | `LabRole` | Resolve data.aws_iam_role.lambda_execution; esta stack não cria nem modifica sua política. |
 | `lambda_runtime` | Runtime Lambda | `string` | `nodejs24.x` | Configura o runtime; precisa ser compatível com o bundle alvo node24. |
-| `lambda_memory_size` | Memória em MB | `number` | `1024` | Configura memória e CPU disponíveis; medir efeito na verificação de senha. |
+| `lambda_memory_size` | Memória em MB | `number` | `256` | Configura memória e CPU disponíveis. |
 | `lambda_timeout` | Timeout em segundos | `number` | `15` | Limita a duração de execução da função. |
 | `lambda_reserved_concurrency` | Reserva de invocações simultâneas | `number` | `10` | Controla reserved_concurrent_executions; -1 remove a reserva e 0 é recusado. |
 | `log_retention_in_days` | Retenção em dias | `number` | `14` | Configura a exclusão dos logs no CloudWatch. |
-| `node_extra_ca_certs` | Caminho do bundle de CAs | `string` | `/etc/pki/tls/certs/ca-bundle.crt` | Define NODE_EXTRA_CA_CERTS para verificar TLS do RDS. |
 | `service_version` | Versão do serviço | `string` | `dev` | CD injeta github.sha no logger, DD_VERSION opcional e tag ServiceVersion. |
 | `enable_telemetry_collection` | Habilitação da coleta | `bool` | `false` | Anexa a layer e as variáveis DD_*; não habilita tracing no código. |
 | `telemetry_api_key` | Chave de ingestão, sensível | `string` | `""` | Alimenta DD_API_KEY no environment da função; permanece no state. |
@@ -141,47 +144,17 @@ isso a stack declara o conjunto completo, e não apenas o que a esteira injeta.
 
 | Variável | Origem | Observação |
 | --- | --- | --- |
-| `NODE_ENV` | constante, `production` | **Obrigatória e sem valor padrão.** A plataforma não a define. Além de habilitar a partida, é ela que liga os guardas de produção: exigir os identificadores de segredo, recusar os valores de contorno e recusar transporte não cifrado |
-| `DATABASE_HOST` | output `db_host` do state remoto | Nunca digitado |
-| `DATABASE_PORT` | output `db_port` do state remoto | Nunca digitado |
-| `DATABASE_NAME` | output `db_name` do state remoto | Nunca digitado |
-| `DATABASE_SECRET_ID` | output `db_credentials_secret_arn` do state remoto | **Opaco por contrato** — ver abaixo |
+| `NODE_ENV` | constante, `production` | **Obrigatória e sem valor padrão.** A plataforma não a define. Além de habilitar a partida, é ela que liga os guardas de produção: exigir o identificador do segredo da chave e recusar a chave passada direto em variável |
+| `IDENTITY_INTERNAL_URL` | `http://<nlb_dns_name>:<service_listener_ports["identity"]>`, do state remoto `k8s` | Endereço do Identity no NLB interno; nunca digitado |
+| `WORK_ORDER_INTERNAL_URL` | `http://<nlb_dns_name>:<service_listener_ports["work-order"]>`, do state remoto `k8s` | Endereço do work-order no NLB interno; nunca digitado |
 | `CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID` | recurso desta stack | Contêiner declarado aqui, valor escrito pela entrega |
-| `NODE_EXTRA_CA_CERTS` | constante | Pacote de autoridades que a imagem do runtime já traz — ver [Banco de dados](database.md#transporte-cifrado) |
 | `NODE_OPTIONS` | constante, `--enable-source-maps` | A construção emite o mapa; sem a opção, a pilha de uma falha interna aponta para posição no pacote em vez de arquivo de origem |
 | `SERVICE_VERSION` | a entrega, `github.sha` | Alimenta o atributo `service.version` que o registro estruturado já emite |
 | `DD_API_KEY`, `DD_SITE`, `DD_ENV`, `DD_SERVICE`, `DD_VERSION`, `DD_SERVERLESS_LOGS_ENABLED`, `DD_TRACE_ENABLED` | camada de coleta | Declaradas apenas com o interruptor ligado. `DD_ENV` é fixo em `production` e não acompanha `var.environment` — ver [Observabilidade](observability.md) |
 
-Nenhum valor sensível aparece no código versionado: a credencial do banco é
-resolvida em execução, a chave de assinatura também, e a credencial de telemetria
-vem do secret de organização e é passada ao environment da função no Terraform.
-
-## O contrato de output da credencial do banco
-
-Esta stack consome o **output**, nunca um nome fixo. O RDS gera e mantém a master
-password e possui o Secret no Secrets Manager; o database publica o ARN em
-`db_credentials_secret_arn`. Três propriedades preservam a integração:
-
-1. **O nome do output é o contrato**, e o identificador do segredo é opaco. A
-   stack de banco publica o ARN calculado do Secret gerenciado — cujo nome é
-   gerado e não pode ser escolhido — sem exigir mudança no código consumidor.
-2. **A forma do conteúdo é a mesma**: campos `username` e `password`, com campos
-   adicionais tolerados pelo leitor. Se o JSON incluir outros metadados, o
-   leitor os ignora; eles não são exigidos nem usados para a conexão.
-3. **O modelo de cifração é o mesmo**: chave gerenciada padrão do serviço de
-   segredos, de modo que a permissão de decifração seja idêntica nas duas
-   implementações.
-
-Endereço, porta e nome do banco continuam vindo dos outputs que a stack de banco
-já expõe, e **não** do segredo — assim a origem desses três não muda junto.
-
-A rotação automática é desabilitada explicitamente pelo database. O descarte
-atual da composição após recusa de autenticação continua inalterado, mas não
-constitui suporte a rotação coordenada; refresh/retry/encerramento de pool exigem
-outra change.
-O State do database contém somente referências/metadados, não a senha; esta
-stack também recebe somente o ARN, e o valor é recuperado pelo runtime.
-Veja o [ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
+Nenhum valor sensível aparece no código versionado: a chave de assinatura é
+resolvida em execução, e a credencial de telemetria vem do secret de organização
+e é passada ao environment da função no Terraform.
 
 ## A chave privada não transita pelo state
 
@@ -190,13 +163,11 @@ forma idempotente, com identificador de requisição derivado do resumo
 criptográfico do material.
 
 Declarar o valor na infraestrutura o colocaria em texto puro no state, num bucket
-compartilhado pelas seis stacks Terraform. Quem tem a chave privada emite token para
+compartilhado pelas stacks Terraform da solução. Quem tem a chave privada emite token para
 qualquer cliente: é o material mais sensível da solução.
 
-Assim como a senha do banco gerenciada pelo RDS, o valor da chave privada não
-entra no State. A diferença é de ownership: o RDS gera a senha, enquanto o CD
-publica o PEM de assinatura. Um ambiente novo só fica funcional depois de a
-entrega executar — o que ela faz de qualquer forma.
+Um ambiente novo só fica funcional depois de a entrega gravar o PEM — o que ela
+faz de qualquer forma.
 
 ## O artefato
 
@@ -223,8 +194,8 @@ terraform validate
 
 Os três não exigem credenciais: fontes de dados não são avaliadas nessas etapas.
 
-Para uma prévia é preciso o laboratório ligado, credenciais válidas e o pacote
-construído — a configuração declara uma fonte de dados sobre `app/dist`:
+Para uma prévia é preciso o ambiente AWS no ar, credenciais AWS válidas e o
+pacote construído — a configuração declara uma fonte de dados sobre `app/dist`:
 
 ```bash
 # A partir da raiz do clone, construir o artefato exigido pelo archive_file
@@ -235,7 +206,7 @@ npm run build
 cd ../infra
 export TF_STATE_BUCKET="<nome do bucket>"
 export TF_VAR_aws_base_state_bucket="$TF_STATE_BUCKET"
-export TF_VAR_database_state_bucket="$TF_STATE_BUCKET"
+export TF_VAR_k8s_state_bucket="$TF_STATE_BUCKET"
 export TF_VAR_gateway_state_bucket="$TF_STATE_BUCKET"
 terraform init -reconfigure -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisar o plano, sem criar recursos
@@ -266,16 +237,17 @@ convenção de nome e não remove a rota automaticamente.
 
 Pré-requisitos de nuvem:
 
-- Infra-base, database, Kubernetes e gateway aplicados, na ordem do grafo acima.
-- Schema da API migrado no RDS; esta função não executa migrations.
-- AWS CLI, Terraform ≥ 1.11 e credenciais de sessão Academy válidas.
-- Role existente (`LabRole` por padrão), com trust Lambda, acesso aos dois
-  segredos, gestão das ENIs e escrita no CloudWatch. Não criar roles aqui.
+- Infra-base, Kubernetes e gateway aplicados, na ordem do grafo acima.
+- Identity e work-order implantados no cluster, para que os portões da entrega
+  aprovem.
+- AWS CLI, Terraform ≥ 1.11 e credenciais AWS válidas.
+- Role existente (`LabRole` por padrão), com trust Lambda, acesso ao segredo da
+  chave, gestão das ENIs e escrita no CloudWatch. Não criar roles aqui.
 - Par RSA preparado: chave privada no environment `production` da Lambda
-  e chave pública correspondente configurada na API.
+  e chave pública correspondente configurada no work-order.
 
 O CD é o roteiro completo: constrói, aplica, grava a chave idempotentemente
-e executa os dois gates. Um `terraform apply` local cria somente o contêiner
+e executa os três portões. Um `terraform apply` local cria somente o contêiner
 do segredo; não grava o PEM, e a função só fica utilizável depois dessa escrita.
 
 ```bash
@@ -284,10 +256,10 @@ terraform apply
 # Conferir os identificadores; nenhuma saída contém a chave privada
 terraform output function_name
 terraform output jwt_private_key_secret_arn
-# Preferir o CD para gravar a chave e executar os gates de implantação
+# Preferir o CD para gravar a chave e executar os portões de implantação
 ```
 
-Para remover o lab, remova a Lambda antes de gateway, database e infra-base:
+Para remover o ambiente, remova a Lambda antes do gateway, do cluster e da rede:
 
 ```bash
 # Na pasta infra da Lambda, revisar os recursos que serão removidos
@@ -296,13 +268,12 @@ terraform plan -destroy
 terraform destroy
 ```
 
-Mantenha a chave privada sob custódia fora do lab para a reconstrução. A
-remoção do banco apaga os dados; o roteiro completo está na
+Mantenha a chave privada sob custódia fora da AWS para a reconstrução. O roteiro
+completo de remoção está na
 [arquitetura do gateway](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway/blob/main/docs/architecture.md#ordem-de-aplicação-e-de-rollback).
 
 ## Documentação relacionada
 
 - [CI/CD](ci-cd.md) — build, gravação da chave, gates e configuração GitHub.
 - [Arquitetura](architecture.md) — camadas e execução na VPC.
-- [Banco](database.md) — consulta, TLS e orçamento de conexões.
 - [Segurança](security.md) — custódia e proteção do material de assinatura.

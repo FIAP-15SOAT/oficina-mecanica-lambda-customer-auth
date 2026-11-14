@@ -3,9 +3,8 @@ import { ConfigurationException } from '@infrastructure/exceptions/configuration
 
 const MINIMUM: NodeJS.ProcessEnv = {
   NODE_ENV: 'development',
-  DATABASE_HOST: 'db.internal',
-  DATABASE_NAME: 'work_order',
-  DATABASE_SECRET_ID: 'oficina/customer-auth/database',
+  IDENTITY_INTERNAL_URL: 'http://internal-nlb.local:8081',
+  WORK_ORDER_INTERNAL_URL: 'http://internal-nlb.local:80',
   CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID: 'oficina/customer-auth/jwt',
 };
 
@@ -16,10 +15,6 @@ describe('loadEnvironment', () => {
     const environment = loadEnvironment(MINIMUM);
 
     expect(environment).toMatchObject({
-      DATABASE_PORT: 5432,
-      DATABASE_CONNECTION_TIMEOUT_MS: 3000,
-      DATABASE_QUERY_TIMEOUT_MS: 5000,
-      DATABASE_SSL: true,
       CUSTOMER_JWT_ISSUER: 'oficina-customer-auth',
       CUSTOMER_JWT_AUDIENCE: 'oficina-api',
       CUSTOMER_JWT_TTL_SECONDS: 3600,
@@ -27,65 +22,67 @@ describe('loadEnvironment', () => {
     });
   });
 
-  it('should coerce the numeric and boolean variables from their string form', () => {
+  it('should coerce the numeric variables from their string form', () => {
     const environment = loadEnvironment({
       ...MINIMUM,
-      DATABASE_PORT: '6543',
-      DATABASE_CONNECTION_TIMEOUT_MS: '1500',
-      DATABASE_QUERY_TIMEOUT_MS: '2500',
-      DATABASE_SSL: 'false',
       CUSTOMER_JWT_TTL_SECONDS: '900',
       LOG_LEVEL: 'debug',
     });
 
-    expect(environment.DATABASE_PORT).toBe(6543);
-    expect(environment.DATABASE_CONNECTION_TIMEOUT_MS).toBe(1500);
-    expect(environment.DATABASE_QUERY_TIMEOUT_MS).toBe(2500);
-    expect(environment.DATABASE_SSL).toBe(false);
     expect(environment.CUSTOMER_JWT_TTL_SECONDS).toBe(900);
     expect(environment.LOG_LEVEL).toBe('debug');
   });
 
-  it.each([
-    ['DATABASE_HOST', 'DATABASE_HOST'],
-    ['DATABASE_NAME', 'DATABASE_NAME'],
-  ])('should fail when the required variable %s is absent', (variable, expected) => {
-    const source = { ...MINIMUM };
-    delete source[variable];
+  it.each(['IDENTITY_INTERNAL_URL', 'WORK_ORDER_INTERNAL_URL'])(
+    'should require IDENTITY_INTERNAL_URL and WORK_ORDER_INTERNAL_URL (%s)',
+    (variable) => {
+      const source = { ...MINIMUM };
+      delete source[variable];
 
-    expect(() => loadEnvironment(source)).toThrow(ConfigurationException);
-    expect(() => loadEnvironment(source)).toThrow(expected);
+      expect(() => loadEnvironment(source)).toThrow(ConfigurationException);
+      expect(() => loadEnvironment(source)).toThrow(variable);
+    },
+  );
+
+  it.each([
+    ['IDENTITY_INTERNAL_URL', 'ftp://internal-nlb.local:8081'],
+    ['WORK_ORDER_INTERNAL_URL', 'internal-nlb.local:80'],
+  ])('should refuse an internal url that is not http or https (%s)', (variable, value) => {
+    expect(() => loadEnvironment({ ...MINIMUM, [variable]: value })).toThrow(variable);
+  });
+
+  it('should accept an internal url over https', () => {
+    const environment = loadEnvironment({
+      ...MINIMUM,
+      IDENTITY_INTERNAL_URL: 'https://identity.local',
+    });
+
+    expect(environment.IDENTITY_INTERNAL_URL).toBe('https://identity.local');
   });
 
   it.each([
-    ['DATABASE_PORT', '0'],
-    ['DATABASE_PORT', '70000'],
-    ['DATABASE_PORT', 'não-é-número'],
-    ['DATABASE_QUERY_TIMEOUT_MS', '-1'],
     ['CUSTOMER_JWT_TTL_SECONDS', '0'],
+    ['CUSTOMER_JWT_TTL_SECONDS', 'não-é-número'],
     ['LOG_LEVEL', 'verbose'],
-    ['DATABASE_SSL', 'talvez'],
   ])('should fail when %s carries the invalid value "%s"', (variable, value) => {
     expect(() => loadEnvironment({ ...MINIMUM, [variable]: value })).toThrow(variable);
   });
 
   it('should accept the development fallbacks instead of the secret identifiers', () => {
     const environment = loadEnvironment({
-      NODE_ENV: 'development',
-      DATABASE_HOST: 'localhost',
-      DATABASE_NAME: 'work_order',
-      DATABASE_SECRET: '{"username":"postgres","password":"postgres"}',
+      ...MINIMUM,
+      CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID: undefined,
       CUSTOMER_JWT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----',
     });
 
-    expect(environment.DATABASE_SECRET_ID).toBeUndefined();
-    expect(environment.DATABASE_SECRET).toContain('postgres');
+    expect(environment.CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID).toBeUndefined();
+    expect(environment.CUSTOMER_JWT_PRIVATE_KEY).toContain('PRIVATE KEY');
   });
 
   /**
-   * O modo é enumerado e obrigatório porque é ele que libera segredo em
-   * variável de ambiente e TLS desligado. Ausente ou desconhecido, a
-   * inicialização falha em vez de assumir o modo mais permissivo.
+   * The mode is enumerated and required because it is what allows a secret in
+   * an environment variable. Missing or unknown, initialization fails instead
+   * of assuming the most permissive mode.
    */
   it.each([undefined, 'prod', 'staging', ''])(
     'should refuse to start when NODE_ENV is %p',
@@ -96,60 +93,53 @@ describe('loadEnvironment', () => {
     },
   );
 
-  it.each(['DATABASE_SECRET_ID', 'CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID'])(
-    'should demand %s in production',
-    (variable) => {
-      const source = { ...PRODUCTION };
-      delete source[variable];
+  it('should demand CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID in production', () => {
+    const source = { ...PRODUCTION };
+    delete source.CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID;
 
-      expect(() => loadEnvironment(source)).toThrow(variable);
-    },
-  );
+    expect(() => loadEnvironment(source)).toThrow('CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID');
+  });
 
   /**
-   * O fallback não é apenas desencorajado em produção: é recusado. Uma chave
-   * privada de assinatura em variável de ambiente fica legível para quem puder
-   * ler a configuração da função, fora de rotação e de auditoria.
+   * The fallback is not just discouraged in production: it is refused. A private
+   * signing key in an environment variable is readable by anyone who can read
+   * the function configuration, outside rotation and audit.
    */
-  it.each([
-    ['DATABASE_SECRET', '{"username":"postgres","password":"postgres"}'],
-    ['CUSTOMER_JWT_PRIVATE_KEY', '-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----'],
-  ])('should refuse the %s fallback in production', (variable, value) => {
-    expect(() => loadEnvironment({ ...PRODUCTION, [variable]: value })).toThrow(
-      `${variable} não é aceito em produção`,
+  it('should refuse the CUSTOMER_JWT_PRIVATE_KEY fallback in production', () => {
+    const source = {
+      ...PRODUCTION,
+      CUSTOMER_JWT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----',
+    };
+
+    expect(() => loadEnvironment(source)).toThrow(
+      'CUSTOMER_JWT_PRIVATE_KEY não é aceito em produção',
     );
   });
 
   it('should still accept the fallbacks in test', () => {
     expect(
       loadEnvironment({
+        ...MINIMUM,
         NODE_ENV: 'test',
-        DATABASE_HOST: 'localhost',
-        DATABASE_NAME: 'work_order',
-        DATABASE_SECRET: '{"username":"postgres","password":"postgres"}',
+        CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID: undefined,
         CUSTOMER_JWT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----',
       }).NODE_ENV,
     ).toBe('test');
   });
 
   /**
-   * Um PEM não atravessa uma variável de ambiente com as quebras de linha
-   * intactas. A forma escapada é a única que `.env` e o descritor de contêiner
-   * transportam.
+   * A PEM does not cross an environment variable with its line breaks intact.
+   * The escaped form is the only one that `.env` and the container descriptor
+   * carry.
    */
   it('should restore the newlines of an escaped PEM', () => {
     const escaped = '-----BEGIN PRIVATE KEY-----\\nMIIB\\n-----END PRIVATE KEY-----\\n';
 
-    const environment = loadEnvironment({
-      ...MINIMUM,
-      CUSTOMER_JWT_PRIVATE_KEY: escaped,
-      DATABASE_SSL_CA: escaped,
-    });
+    const environment = loadEnvironment({ ...MINIMUM, CUSTOMER_JWT_PRIVATE_KEY: escaped });
 
     expect(environment.CUSTOMER_JWT_PRIVATE_KEY).toBe(
       '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n',
     );
-    expect(environment.DATABASE_SSL_CA).toContain('\nMIIB');
   });
 
   it('should leave a PEM that already carries real newlines untouched', () => {
@@ -160,27 +150,10 @@ describe('loadEnvironment', () => {
     ).toBe(real);
   });
 
-  it('should demand an identifier or a fallback for each secret', () => {
-    expect(() =>
-      loadEnvironment({ NODE_ENV: 'development', DATABASE_HOST: 'h', DATABASE_NAME: 'n' }),
-    ).toThrow('DATABASE_SECRET_ID');
-
+  it('should demand an identifier or a fallback for the private key', () => {
     expect(() =>
       loadEnvironment({ ...MINIMUM, CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID: undefined }),
     ).toThrow('CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID');
-  });
-
-  /**
-   * Desligar o TLS existe para o PostgreSQL local, que não o expõe. Em produção
-   * é recusado — e a verificação de certificado nunca é desligada em caminho
-   * algum.
-   */
-  it('should refuse to disable TLS in production', () => {
-    expect(() =>
-      loadEnvironment({ ...MINIMUM, NODE_ENV: 'production', DATABASE_SSL: 'false' }),
-    ).toThrow('DATABASE_SSL=false não é aceito em produção');
-
-    expect(loadEnvironment({ ...MINIMUM, NODE_ENV: 'production' }).DATABASE_SSL).toBe(true);
   });
 
   it('should label a problem with no path as coming from the root', () => {
@@ -190,15 +163,15 @@ describe('loadEnvironment', () => {
   it('should report every problem at once, naming each variable', () => {
     const error = (() => {
       try {
-        loadEnvironment({ DATABASE_PORT: 'x' });
+        loadEnvironment({ CUSTOMER_JWT_TTL_SECONDS: 'x' });
       } catch (caught) {
         return caught as Error;
       }
       return undefined;
     })();
 
-    expect(error?.message).toContain('DATABASE_HOST');
-    expect(error?.message).toContain('DATABASE_NAME');
-    expect(error?.message).toContain('DATABASE_PORT');
+    expect(error?.message).toContain('IDENTITY_INTERNAL_URL');
+    expect(error?.message).toContain('WORK_ORDER_INTERNAL_URL');
+    expect(error?.message).toContain('CUSTOMER_JWT_TTL_SECONDS');
   });
 });

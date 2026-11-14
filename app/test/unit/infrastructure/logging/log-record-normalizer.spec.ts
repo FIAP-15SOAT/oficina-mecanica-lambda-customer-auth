@@ -9,9 +9,9 @@ describe('normalizeLogRecord', () => {
   });
 
   /**
-   * Último portão antes da linha sair. Um atributo novo que escapasse sem
-   * declaração chega ao backend com tipo indefinido — e um campo cujo tipo varia
-   * entre registros faz o índice derrubar o evento inteiro, não só o campo.
+   * Last gate before the line leaves. A new attribute that slipped through
+   * undeclared reaches the backend with an undefined type — and a field whose type
+   * varies between records makes the index drop the whole event, not just the field.
    */
   it('should drop an attribute the registry does not declare', () => {
     expect(

@@ -3,9 +3,9 @@ import { defineLogEvent } from '@application/logging/log-event';
 type EmptyFields = Record<never, never>;
 
 export const TECHNICAL_EVENTS = {
-  DATABASE_QUERY_FAILED: defineLogEvent<EmptyFields>({
-    name: 'db.query.failed',
-    message: 'identity query against the database failed',
+  INTERNAL_CALL_FAILED: defineLogEvent<EmptyFields>({
+    name: 'internal.call.failed',
+    message: 'internal service call failed',
     level: 'error',
   }),
   TOKEN_SIGNING_FAILED: defineLogEvent<EmptyFields>({

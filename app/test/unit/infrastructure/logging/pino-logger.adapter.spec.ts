@@ -91,14 +91,14 @@ describe('PinoLoggerAdapter — catalog and dictionary', () => {
   });
 
   /**
-   * O CPF é protegido pela classificação do registro, não por mascaramento no
-   * ponto de chamada — a chamada passa a forma pontuada e o adapter mascara.
+   * The CPF is protected by the record classification, not by masking at the
+   * call site — the call passes the punctuated form and the adapter masks it.
    */
   it('should mask a field declared as personal data', () => {
     const capture = captureLog();
 
     capture.adapter.event(BUSINESS_EVENTS.AUTHENTICATION_FAILED, {
-      failureReason: 'wrong_password',
+      failureReason: 'credential_refused',
       maskedCpf: '123.456.789-09',
     });
 
@@ -123,7 +123,7 @@ describe('PinoLoggerAdapter — catalog and dictionary', () => {
     const capture = captureLog();
 
     capture.adapter.event(BUSINESS_EVENTS.AUTHENTICATION_FAILED, {
-      failureReason: 'unknown_user',
+      failureReason: 'credential_refused',
       maskedCpf: '123.456.789-09',
       subjectId: undefined,
     });
@@ -136,7 +136,7 @@ describe('PinoLoggerAdapter — catalog and dictionary', () => {
     const capture = captureLog();
 
     capture.adapter.event(BUSINESS_EVENTS.AUTHENTICATION_FAILED, {
-      failureReason: 'unknown_user',
+      failureReason: 'credential_refused',
       quoteId: 'x',
     } as never);
 
@@ -149,11 +149,11 @@ describe('PinoLoggerAdapter — catalog and dictionary', () => {
   it('should attach the described error to a technical event', () => {
     const capture = captureLog();
 
-    capture.adapter.event(TECHNICAL_EVENTS.DATABASE_QUERY_FAILED, {}, new Error('timeout'));
+    capture.adapter.event(TECHNICAL_EVENTS.INTERNAL_CALL_FAILED, {}, new Error('timeout'));
 
     expect(capture.lines()[0]).toMatchObject({
       level: 'error',
-      'oficina.event.name': 'db.query.failed',
+      'oficina.event.name': 'internal.call.failed',
       'exception.message': 'timeout',
     });
   });

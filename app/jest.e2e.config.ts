@@ -18,7 +18,6 @@ const config: Config = {
   collectCoverageFrom: ['src/**/*.ts', ...coverageExclusions],
   coverageDirectory: 'coverage/e2e',
   coverageReporters: ['text-summary', 'lcov'],
-  testTimeout: 300_000,
 };
 
 export default config;

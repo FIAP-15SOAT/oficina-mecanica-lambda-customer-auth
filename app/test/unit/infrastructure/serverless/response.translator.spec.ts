@@ -1,7 +1,7 @@
 import { BadRequestException } from '@application/exceptions/bad-request.exception';
 import { UnauthorizedAccessException } from '@application/exceptions/unauthorized-access.exception';
 import { DomainValidationException } from '@domain/exceptions/domain-validation.exception';
-import { DatabaseOperationException } from '@infrastructure/exceptions/database-operation.exception';
+import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 import { TokenSigningException } from '@infrastructure/exceptions/token-signing.exception';
 import {
   buildErrorResponse,
@@ -9,6 +9,7 @@ import {
   inputRejectionMessage,
   INVALID_CREDENTIALS_MESSAGE,
   JSON_CONTENT_TYPE,
+  resolveTechnicalEvent,
   SERVICE_UNAVAILABLE_MESSAGE,
   UNEXPECTED_ERROR_MESSAGE,
 } from '@infrastructure/serverless/response.translator';
@@ -24,7 +25,7 @@ describe('buildSuccessResponse', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    // `no-store` porque o corpo carrega um bearer token.
+    // `no-store` because the body carries a bearer token.
     expect(response.headers).toEqual({
       'content-type': JSON_CONTENT_TYPE,
       'cache-control': 'no-store',
@@ -46,7 +47,7 @@ describe('buildErrorResponse', () => {
     ],
     [new UnauthorizedAccessException(), 401, 'Unauthorized', INVALID_CREDENTIALS_MESSAGE],
     [
-      new DatabaseOperationException('busca', { cause: new Error('timeout') }),
+      new ServiceIntegrationException('POST /internal/customer-authentications', 500),
       503,
       'Service Unavailable',
       SERVICE_UNAVAILABLE_MESSAGE,
@@ -68,24 +69,21 @@ describe('buildErrorResponse', () => {
   });
 
   /**
-   * O detalhe do banco existe no log e não na resposta: endereço, porta, cadeia
-   * de conexão e pilha de execução ficam do lado de dentro.
+   * The internal call detail lives in the log, not in the response: address,
+   * port, route and stack stay inside.
    */
-  it('should not leak database detail on the unavailability response', () => {
+  it('should not leak internal call detail on the unavailability response', () => {
     const rendered = String(
       buildErrorResponse(
-        new DatabaseOperationException('busca', {
-          cause: new Error(
-            'connect ECONNREFUSED 10.0.3.17:5432 postgresql://oficina_ro:senha@db.internal/work_order',
-          ),
+        new ServiceIntegrationException('POST /internal/customer-authentications', undefined, {
+          cause: new Error('connect ECONNREFUSED 10.0.3.17:8081'),
         }),
       ).body,
     );
 
     expect(rendered).not.toContain('10.0.3.17');
-    expect(rendered).not.toContain('5432');
-    expect(rendered).not.toContain('postgresql://');
-    expect(rendered).not.toContain('senha');
+    expect(rendered).not.toContain('8081');
+    expect(rendered).not.toContain('/internal/');
   });
 
   it('should not leak an internal message on the generic failure', () => {
@@ -97,12 +95,26 @@ describe('buildErrorResponse', () => {
 
   it('should answer 401 identically for every credential cause', () => {
     const rendered = new Set(
-      ['unknown_user', 'inactive_user', 'wrong_password', 'no_active_customer_link'].map(() =>
+      ['credential_refused', 'no_active_customer_link'].map(() =>
         JSON.stringify(buildErrorResponse(new UnauthorizedAccessException())),
       ),
     );
 
     expect(rendered.size).toBe(1);
+  });
+});
+
+describe('resolveTechnicalEvent', () => {
+  it('should name a failed internal call as internal.call.failed', () => {
+    const event = resolveTechnicalEvent(
+      new ServiceIntegrationException('GET /internal/users/u-1/customers', 500),
+    );
+
+    expect(event).toMatchObject({ name: 'internal.call.failed', level: 'error' });
+  });
+
+  it('should not name a credential refusal as a technical failure', () => {
+    expect(resolveTechnicalEvent(new UnauthorizedAccessException())).toBeUndefined();
   });
 });
 

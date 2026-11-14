@@ -11,8 +11,8 @@ function createGateway(value = 'valor-do-segredo') {
 
 describe('createSecretResolver', () => {
   /**
-   * A propriedade que faz a função rodar localmente sem credencial de nuvem
-   * alguma: com fallback presente, o cliente sequer é instanciado.
+   * The property that lets the function run locally with no cloud credential at
+   * all: with a fallback present, the client is not even instantiated.
    */
   it('should not reach the cloud client when the fallback is present', async () => {
     const { gateway, factory } = createGateway();

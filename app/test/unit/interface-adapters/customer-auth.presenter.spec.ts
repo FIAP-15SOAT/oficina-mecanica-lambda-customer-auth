@@ -22,9 +22,9 @@ describe('CustomerAuthPresenter', () => {
   });
 
   /**
-   * A tradução é campo a campo. Um campo novo na saída do caso de uso não se
-   * publica sozinho na resposta — que é o caminho por onde dado pessoal
-   * vazaria.
+   * The translation is field by field. A new field in the use case output is not
+   * published in the response by itself — that is the path through which personal
+   * data would leak.
    */
   it('should not let an extra field of the use case output reach the response', () => {
     const contaminated = {

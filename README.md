@@ -3,12 +3,12 @@
 # 🔐 Oficina Mecânica · Customer Auth
 
 **Autenticação de clientes por CPF e senha, em função serverless.** Recebe uma
-credencial, decide, e emite o token que a API principal já sabe verificar.
+credencial, confere-a nos serviços donos dos dados e emite o token que o
+work-order já sabe verificar.
 
 ![Node](https://img.shields.io/badge/Node.js-24-339933?logo=node.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)
 ![AWS Lambda](https://img.shields.io/badge/AWS%20Lambda-FF9900?logo=awslambda&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![Cobertura](https://img.shields.io/badge/cobertura-100%25-brightgreen)
 
 [![CI](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/actions/workflows/ci.yml)
@@ -24,46 +24,54 @@ Projeto acadêmico da pós-graduação em Arquitetura de Software da FIAP (turma
 
 A oficina precisa que o **cliente final** — e não apenas o funcionário — se
 autentique para consultar as próprias ordens de serviço e aprovar ou rejeitar
-orçamentos. A API principal já verifica o token externo por uma estratégia
-dedicada e já administra os vínculos entre pessoa e cliente. A emissão do
-token externo pertence a esta função serverless, separada do login interno
-HS256 da API; o cliente usa o RS256 recebido aqui nas rotas `/api/me/**`.
+orçamentos. Dois serviços da solução guardam o que a decisão precisa: o
+**Identity**, serviço que guarda os usuários e as senhas, e o **work-order**,
+serviço das ordens de serviço, que guarda os clientes e os vínculos entre usuário
+e cliente. O work-order também verifica o token do cliente nas rotas
+`/api/me/**`. A emissão desse token pertence a esta função serverless, separada
+do login interno dos funcionários: o cliente usa o JWT RS256 recebido aqui.
 
 ## 🎯 Responsabilidade
 
 **O que a função faz**
 
 - Expõe `POST /customer-auth/login`, recebendo `{ cpf, password }`.
-- Normaliza e valida o CPF, localiza o usuário, verifica a senha contra o hash
-  bcrypt existente, exige conta ativa e **ao menos um vínculo com cliente ativo**.
+- Normaliza e valida o CPF e pede ao Identity a verificação da credencial
+  (`POST /internal/customer-authentications`). O Identity confere se o usuário
+  existe, se a conta está ativa e se a senha confere.
+- Com a credencial aceita, pede ao work-order os clientes ativos vinculados ao
+  usuário (`GET /internal/users/:userId/customers`) e exige **ao menos um**.
 - Emite um JWT **RS256** com exatamente `sub`, `iss`, `aud`, `iat` e `exp`, mais
   `kid` no cabeçalho. Validade configurável, padrão 3600 s. Sem refresh token.
+
+As duas chamadas são internas: passam pelo NLB (Network Load Balancer, o
+balanceador de rede interno do cluster Kubernetes onde os serviços rodam) e
+levam o identificador da requisição e o contexto de trace da invocação.
 
 **O que ela não faz**
 
 Não cria usuário, não define ou altera senha, não administra vínculos, não
-escreve no banco e **não chama a API principal** para autenticar — se a API
-estiver fora do ar, a autenticação externa continua funcionando.
+acessa banco de dados e não guarda estado entre invocações. Se o Identity ou o
+work-order estiverem fora do ar, o login responde `503`.
 
 **Uma propriedade que a define**
 
 - **Mensagem única** para toda falha de credencial: CPF inexistente, conta
   inativa, senha incorreta e ausência de vínculo produzem resposta idêntica.
-- **Sem escrita**: a função não cria usuário, não altera senha e não administra
-  vínculo. Ela lê uma linha e assina um token.
+- **Sem escrita**: a função faz duas leituras nos serviços donos e assina um
+  token.
 
 ## 🧰 Stack
 
 | Camada | Escolha | Por quê |
 | --- | --- | --- |
-| Runtime | Node.js 24 · TypeScript | Mesma stack da API |
-| Banco | `pg` (driver), pool de tamanho 1 | Uma consulta de leitura — [ADR 0001](docs/adr/0001-driver-em-vez-de-orm.md) |
+| Runtime | Node.js 24 · TypeScript | Mesma stack dos serviços |
+| Chamadas internas | `axios` | O mesmo cliente HTTP que os serviços usam; timeout de 2 s e conexão nova a cada chamada — [ADR 0007](docs/adr/0007-credencial-e-vinculo-verificados-nos-servicos-donos.md) |
 | Assinatura | `jose` | Zero dependências transitivas; chave importada na inicialização |
-| Hash | `bcryptjs` (JavaScript puro) | Módulo nativo não executa na plataforma — [ADR 0003](docs/adr/0003-bcrypt-em-javascript-puro.md) |
-| Log | `pino`, stdout síncrono | Envelope e dicionário compatíveis com os da API |
+| Log | `pino`, stdout síncrono | Envelope e dicionário compatíveis com os dos serviços |
 | Configuração | `zod` | Falha na inicialização, não por requisição |
 | Build | `esbuild` → pacote único CJS | Sem código nativo; o `.zip` é montado pelo Terraform |
-| Testes | Jest · Testcontainers | Unitário e ponta a ponta — [Testes](docs/testing.md) |
+| Testes | Jest | Unitário e ponta a ponta contra stubs dos serviços — [Testes](docs/testing.md) |
 
 Nenhuma dependência de runtime é módulo nativo, o que mantém o artefato
 portátil.
@@ -71,17 +79,11 @@ portátil.
 ## ⚙️ Pré-requisitos
 
 - **Node.js 24+**
-- **Docker** (apenas para a suíte de ponta a ponta)
-- Um **PostgreSQL com o schema da API** — o schema pertence a ela e não é
-  recriado aqui
 
-Nenhuma credencial de nuvem é necessária para desenvolver.
-
-Em produção, o RDS gera e mantém a master password no Secrets Manager, com
-rotação automática desabilitada. A Lambda recebe o ARN pelo output
-`db_credentials_secret_arn` e lê `username`/`password` diretamente, ignorando
-campos adicionais. Não passa pelo CD da API ou pelo Kubernetes Secret. Detalhes em [Banco](docs/database.md#a-forma-do-segredo) e no
-[ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
+Nenhuma credencial de nuvem, banco ou serviço no ar é necessário para
+desenvolver: um stub local responde pelo Identity e pelo work-order. Um stub é
+um servidor HTTP de teste que imita as rotas internas dos dois serviços com
+respostas fixas.
 
 ## 🚀 Início rápido
 
@@ -91,18 +93,19 @@ npm ci
 cp .env.example .env
 
 # chave privada de teste — gere a sua; nenhuma é versionada
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/key.pem
-node -e "console.log('CUSTOMER_JWT_PRIVATE_KEY=' + JSON.stringify(require('node:fs').readFileSync('/tmp/key.pem','utf8')))" >> .env
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out key.pem
+node -e "console.log('CUSTOMER_JWT_PRIVATE_KEY=' + JSON.stringify(require('node:fs').readFileSync('key.pem','utf8').replace(/\r/g,'')))" >> .env
 
+npm run stub          # em outro terminal: stub do Identity e do work-order na porta 4010
 npm run invoke        # executa o ponto de entrada com events/login.event.json
 ```
 
-Não há servidor HTTP local: a função é exercitada pela invocação avulsa, com um
-evento no formato que o gateway entrega. Trocar `cpf` e `password` em
+Não há servidor HTTP local da função: ela é exercitada pela invocação avulsa,
+com um evento no formato que o API Gateway entrega. Trocar `cpf` e `password` em
 `app/events/login.event.json` é o caminho mais curto para outro cenário.
 
-Passo a passo completo, incluindo como reusar o banco que o ambiente local da API
-já subiu, em [Como executar localmente](docs/local-setup.md).
+Passo a passo completo, inclusive como usar o Identity e o work-order locais no
+lugar do stub, em [Como executar localmente](docs/local-setup.md).
 
 ## 📜 Comandos
 
@@ -111,11 +114,12 @@ Todos rodam a partir de `app/`.
 | Comando | O que faz |
 | --- | --- |
 | `npm run invoke` | Invoca o ponto de entrada **uma** vez, a partir de `events/login.event.json` |
+| `npm run stub` | Sobe na porta 4010 o stub das rotas internas do Identity e do work-order, com o cliente do evento de exemplo |
 | `npm run build` | Pacote único em CommonJS, com mapa de origem, em `dist/` |
 | `npm test` | Suíte unitária — sem entrada e saída, sem contêiner, sem rede |
-| `npm run test:cov` | Unitária com cobertura; exige 100% nas quatro métricas |
-| `npm run test:e2e` | Ponta a ponta contra PostgreSQL real, migrado pela imagem da API |
-| `npm run lint` | ESLint + Prettier, incluindo a cerca entre camadas |
+| `npm run test:cov` | Unitária com cobertura; exige 100% em linhas, instruções, funções e ramos |
+| `npm run test:e2e` | Ponta a ponta: o ponto de entrada real contra o stub dos dois serviços |
+| `npm run lint` | ESLint + Prettier, incluindo a regra que separa as camadas |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run format` | Aplica a formatação |
 
@@ -128,15 +132,15 @@ Todos rodam a partir de `app/`.
 │   └── workflows/              # CI, SAST e CD da função
 ├── app/
 │   ├── src/
-│   │   ├── domain/              # Entidades, contratos e regras de domínio
-│   │   ├── application/         # Casos de uso e portas
+│   │   ├── domain/              # Value Object do CPF, validação e exceções
+│   │   ├── application/         # Caso de uso, portas e catálogo de eventos
 │   │   ├── interface-adapters/  # Controller e apresentação do login
-│   │   ├── infrastructure/     # Banco, JWT, logging e adaptação do evento
+│   │   ├── infrastructure/     # Cliente HTTP interno, gateways, JWT, logging e evento
 │   │   ├── bootstrap.ts        # Composição memoizada
 │   │   └── handler.ts          # Ponto de entrada da plataforma
-│   ├── test/                    # Testes unitários e E2E
+│   ├── test/                    # Unitários, E2E, stub e fixtures dos serviços
 │   ├── events/                  # Eventos para execução local
-│   ├── scripts/                 # Scripts de apoio à aplicação
+│   ├── scripts/                 # Build, invocação avulsa e stub local
 │   ├── .env.example            # Referência de configuração local
 │   └── package.json            # Dependências e comandos npm
 ├── docs/
@@ -145,12 +149,11 @@ Todos rodam a partir de `app/`.
 │   ├── architecture.md         # Arquitetura e fluxo de autenticação
 │   ├── ci-cd.md                # Workflows, jobs, steps e configuração GitHub
 │   ├── terraform.md            # Recursos, inputs, outputs e aplicação local
-│   ├── contracts.md            # Login, respostas e claims
-│   ├── database.md             # Consulta, pool e TLS
+│   ├── contracts.md            # Login, respostas, claims e chamadas internas
 │   ├── security.md             # Ameaças e custódia da chave
 │   ├── logging.md              # Envelope, campos e eventos
-│   ├── observability.md        # Coleta opcional e limites de correlação
-│   ├── local-setup.md          # Desenvolvimento e integração com a API
+│   ├── observability.md        # Coleta opcional e correlação
+│   ├── local-setup.md          # Desenvolvimento com o stub ou com os serviços locais
 │   └── testing.md              # Unitários, E2E e cobertura
 ├── infra/                      # Função AWS Lambda e integrações
 ├── .gitignore
@@ -161,55 +164,59 @@ Todos rodam a partir de `app/`.
 
 | Documento | Conteúdo |
 | --- | --- |
-| 📄 [Contrato](docs/contracts.md) | **Normativo e autocontido**: rota, corpo, envelope de sucesso, tabela de erros, claims, algoritmo, validade e identificador de chave |
-| 🏛️ [Arquitetura](docs/architecture.md) | Camadas, portas, composição memoizada, fluxo de invocação, árvore de diretórios e as divergências em relação à API |
-| 🗄️ [Banco de dados](docs/database.md) | A consulta, ciclo de vida da conexão, limites de tempo, TLS, caminho de rede e orçamento de conexões |
-| 🔒 [Segurança](docs/security.md) | Modelo de ameaças, anti-enumeração, anti-temporização, custódia da chave, e o que a limitação do gateway **não** protege |
+| 📄 [Contrato](docs/contracts.md) | **Normativo e autocontido**: rota, corpo, envelope de sucesso, tabela de erros, claims, algoritmo, validade, identificador de chave e as duas chamadas internas |
+| 🏛️ [Arquitetura](docs/architecture.md) | Camadas, portas, gateways, composição memoizada, fluxo de invocação com as duas chamadas, correlação e as divergências em relação ao work-order |
+| 🔒 [Segurança](docs/security.md) | Modelo de ameaças, anti-enumeração, temporização, custódia da chave, e o que a limitação do gateway **não** protege |
 | 📊 [Logging](docs/logging.md) | Envelope, dicionário completo, eventos, níveis e a tabela de divergências |
-| 💻 [Como executar localmente](docs/local-setup.md) | A invocação avulsa, o banco pela imagem da API, e a convivência com o ambiente local dela |
-| 🧪 [Testes](docs/testing.md) | Os dois níveis, propriedades travadas por teste e cobertura |
-| 🔁 [CI/CD](docs/ci-cd.md) | Os três workflows, cada job e o que o reprova, os dois portões pós-implantação, o inventário de configuração externa e o guia de solução de problemas |
-| ☁️ [Infraestrutura](docs/terraform.md) | O que a stack provisiona, a fronteira entre repositórios, o consumo de state remoto e o contrato de output da credencial do banco |
-| 🔭 [Observabilidade](docs/observability.md) | Os sinais que a função produz, a camada que os coleta, os dois eixos de correlação e o que não é instrumentado |
-| 📐 [ADR 0001](docs/adr/0001-driver-em-vez-de-orm.md) | Driver em vez de ORM |
+| 💻 [Como executar localmente](docs/local-setup.md) | A invocação avulsa, o stub local e os serviços locais |
+| 🧪 [Testes](docs/testing.md) | Os dois níveis, o stub e as fixtures, propriedades travadas por teste e cobertura |
+| 🔁 [CI/CD](docs/ci-cd.md) | Os três workflows, cada job e o que o reprova, os três portões pós-implantação, o inventário de configuração externa e o guia de solução de problemas |
+| ☁️ [Infraestrutura](docs/terraform.md) | O que a stack provisiona, a fronteira entre repositórios, o consumo de state remoto e as variáveis da função |
+| 🔭 [Observabilidade](docs/observability.md) | Os sinais que a função produz, a camada que os coleta, os eixos de correlação e o que não é instrumentado |
+| 📐 [ADR 0001](docs/adr/0001-driver-em-vez-de-orm.md) | Driver em vez de ORM (substituído pelo ADR 0007) |
 | 📐 [ADR 0002](docs/adr/0002-camadas-enxutas-com-composicao-memoizada.md) | Camadas enxutas com composição memoizada |
-| 📐 [ADR 0003](docs/adr/0003-bcrypt-em-javascript-puro.md) | bcrypt em JavaScript puro, artefato compactado e execução local |
+| 📐 [ADR 0003](docs/adr/0003-bcrypt-em-javascript-puro.md) | bcrypt em JavaScript puro, artefato compactado e execução local (emendado pelo ADR 0007) |
 | 📐 [ADR 0004](docs/adr/0004-empacotamento-e-publicacao.md) | Empacotamento e publicação da função |
-| 📐 [ADR 0005](docs/adr/0005-coleta-de-telemetria-sem-instrumentacao.md) | Coleta de telemetria sem instrumentação no código |
+| 📐 [ADR 0005](docs/adr/0005-coleta-de-telemetria-sem-instrumentacao.md) | Coleta de telemetria sem instrumentação no código (emendado pelo ADR 0008) |
 | 📐 [ADR 0006](docs/adr/0006-sem-analise-dinamica.md) | Sem análise dinâmica de segurança neste repositório |
+| 📐 [ADR 0007](docs/adr/0007-credencial-e-vinculo-verificados-nos-servicos-donos.md) | Credencial e vínculo verificados nos serviços donos |
+| 📐 [ADR 0008](docs/adr/0008-contexto-de-trace-sem-sdk.md) | Contexto de trace sem SDK |
 
 ## 🧩 Ecossistema
 
 | Repositório | Papel | Relação com esta função |
 | --- | --- | --- |
-| [`oficina-mecanica-work-order-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service) | API principal (NestJS) | **Dona do schema** e da identidade. Verifica o token emitido aqui, com uma estratégia separada da interna. Sua imagem é usada como migrador do banco local e de teste |
+| [`oficina-mecanica-identity-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service) | Serviço Identity (NestJS) | **Dono dos usuários e das senhas.** Verifica a credencial em `POST /internal/customer-authentications` e publica a fixture dessa rota |
+| [`oficina-mecanica-work-order-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service) | Serviço work-order (NestJS) | **Dono dos clientes e dos vínculos.** Devolve os clientes ativos do usuário em `GET /internal/users/:userId/customers` e verifica, nas rotas `/api/me/**`, o token emitido aqui |
 | [`oficina-mecanica-infra-base`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Rede | Dona da VPC e das subnets privadas às quais esta função é anexada |
-| [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order) | Banco | Dono da instância e da credencial. Expõe endereço, porta, nome e o identificador do segredo por output |
+| [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) | Cluster | Dono do NLB interno; publica o endereço e as portas dele, que esta stack lê para montar as URLs internas |
 | [`oficina-mecanica-api-gateway`](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway) | API Gateway | Publica `POST /customer-auth/login` e consome [`docs/contracts.md`](docs/contracts.md). Esta stack concede a autorização de invocação |
-| [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) | Cluster | Executa a API principal. Não participa desta função |
 | [`oficina-mecanica-custom-monitoring`](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring) | Observabilidade | Provisiona dashboards, monitors e Synthetic; a coleta opcional desta função é configurada nesta stack |
 | **[`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth)** | **Esta função** | Emite o token externo, e é dona da própria stack de infraestrutura |
 
-O modelo de identidade — `users.cpf`, `user_customers`, `customers.is_active` —
-é definido e mantido pela API. O contrato de acesso está em [API › Identidade externa e autorização por vínculo](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service/blob/main/docs/architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo). Este
-repositório **lê** esse modelo e não contém DDL algum.
+Esta função não guarda nem replica usuário, senha, cliente ou vínculo: guarda
+só o `userId` recebido do Identity durante a invocação e busca o resto em quem é
+dono do dado.
 
 ## 📦 Estado
 
 - A função é implementada em camadas enxutas, coberta por suíte unitária com
-  **100% nas quatro métricas** e por suíte de ponta a ponta contra o schema real
-  mantido pela API.
-- A esteira valida toda mudança em seis verificações paralelas, a análise
+  **100% em linhas, instruções, funções e ramos** e por suíte de ponta a ponta
+  contra stubs que respondem com as fixtures publicadas pelo Identity e pelo
+  work-order.
+- A esteira valida toda mudança em seis verificações paralelas (Lint, Type
+  Check, Unit Tests, E2E Tests, Package e Terraform Validation), a análise
   estática impõe o seu portão de qualidade, e a entrega provisiona a função e a
-  publica — terminando em **dois portões**: a invocação real e a chamada à rota
-  pública, ambas exigindo recusa de credencial.
+  publica — terminando em **três portões**: a invocação direta e a rota pública,
+  ambas exigindo recusa de uma credencial inexistente, e o login de um cliente
+  semeado, cujo token o work-order precisa aceitar.
 - A infraestrutura vive em [`infra/`](infra/): a função em subnets
   privadas, o seu grupo de segurança, o grupo de log, o segredo da chave de
   assinatura, a concorrência reservada e a autorização de invocação concedida à
   API Gateway.
 - `POST /customer-auth/login` é atendida pela função, e o token emitido aqui é
-  aceito pela estratégia `customer-jwt` da API. Passo a passo em
-  [Como executar localmente](docs/local-setup.md#os-dois-repositórios-juntos).
+  aceito pelo work-order nas rotas `/api/me/**`. Passo a passo em
+  [Como executar localmente](docs/local-setup.md#com-o-identity-e-o-work-order-locais).
 
 ## 👥 Autores
 
@@ -222,4 +229,3 @@ repositório **lê** esse modelo e não contém DDL algum.
 
 Projeto acadêmico (FIAP — 15SOAT), para fins educacionais. Sem licença aberta
 declarada (`UNLICENSED`).
-

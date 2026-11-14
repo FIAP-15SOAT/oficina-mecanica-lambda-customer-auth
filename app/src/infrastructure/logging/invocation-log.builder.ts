@@ -7,8 +7,6 @@ import { sanitizeText } from './redaction/text-sanitizer';
 export const INVOCATION_LOG_MESSAGE = 'http request';
 
 export const DURATION_ATTRIBUTE = 'oficina.faas.invocation.duration_ms';
-export const QUERY_DURATION_ATTRIBUTE = 'oficina.db.query.duration_ms';
-export const PASSWORD_DURATION_ATTRIBUTE = 'oficina.auth.password.verification.duration_ms';
 
 const SERVER_ERROR_STATUS = 500;
 
@@ -16,8 +14,6 @@ export interface InvocationOutcome {
   method: string;
   statusCode: number;
   durationMs: number;
-  queryDurationMs?: number;
-  passwordVerificationDurationMs?: number;
   error?: unknown;
 }
 
@@ -52,14 +48,8 @@ function buildRecord(outcome: InvocationOutcome): Record<string, unknown> {
     'http.request.method': outcome.method,
     'http.response.status_code': outcome.statusCode,
     [DURATION_ATTRIBUTE]: outcome.durationMs,
-    ...optionalDuration(QUERY_DURATION_ATTRIBUTE, outcome.queryDurationMs),
-    ...optionalDuration(PASSWORD_DURATION_ATTRIBUTE, outcome.passwordVerificationDurationMs),
     ...buildErrorAttributes(outcome),
   };
-}
-
-function optionalDuration(attribute: string, value: number | undefined): Record<string, number> {
-  return typeof value === 'number' ? { [attribute]: value } : {};
 }
 
 function buildErrorAttributes(outcome: InvocationOutcome): Record<string, unknown> {

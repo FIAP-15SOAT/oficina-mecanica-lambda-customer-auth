@@ -47,9 +47,9 @@ describe('validateLoginEvent', () => {
   });
 
   /**
-   * O limite existe antes de qualquer desserialização: o gateway já restringe a
-   * carga, mas a função não pode depender disso para decidir quanto texto vai
-   * processar.
+   * The limit applies before any deserialization: the gateway already limits the
+   * payload, but the function cannot rely on that to decide how much text it
+   * processes.
    */
   it('should reject a body past the accepted size', () => {
     const event = buildJsonEvent({ cpf: '12345678909', password: 'x'.repeat(MAX_BODY_BYTES) });
@@ -58,8 +58,8 @@ describe('validateLoginEvent', () => {
   });
 
   /**
-   * Método e rota são do gateway, que serve um caminho e um verbo só. Repetir a
-   * checagem aqui recusaria requisição legítima sem ganho.
+   * Method and route belong to the gateway, which serves a single path and verb.
+   * Repeating the check here would refuse a legitimate request for no gain.
    */
   it('should not second-guess the gateway about the method', () => {
     const event = buildJsonEvent({ cpf: '12345678909', password: 'x' }, { method: 'GET' });

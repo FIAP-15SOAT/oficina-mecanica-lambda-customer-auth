@@ -3,17 +3,17 @@ import pino, { DestinationStream } from 'pino';
 import { reportDestinationFailure } from './logging-diagnostics';
 
 /**
- * Destino padrão: stream para o fd 1 (stdout), em modo síncrono.
+ * Default destination: stream to fd 1 (stdout), in synchronous mode.
  *
- * `sync: true` porque o buffer assíncrono do pino perde as últimas linhas quando
- * o ambiente é congelado assim que a resposta retorna — e uma linha
- * bufferizada ficaria retida até a invocação seguinte, ou se perderia se o
- * ambiente fosse reciclado antes dela.
+ * `sync: true` because pino's asynchronous buffer loses the last lines when the
+ * environment is frozen right after the response returns — and a buffered line
+ * would be held until the next invocation, or lost if the environment were
+ * recycled before it.
  *
- * O handler de `error` é obrigatório, não zelo: um evento `'error'` sem listener
- * em stream do Node derruba o processo, então um `stdout` quebrado — EPIPE
- * quando o coletor cai — faria o logging matar a aplicação que ele existe para
- * observar.
+ * The `error` handler is required, not extra care: an `'error'` event with no
+ * listener on a Node stream kills the process, so a broken `stdout` — EPIPE
+ * when the collector goes down — would make logging kill the application it
+ * exists to observe.
  */
 export function createDefaultDestination(): DestinationStream {
   const destination = pino.destination({ dest: 1, sync: true });

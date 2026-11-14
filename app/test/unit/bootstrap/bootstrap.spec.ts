@@ -3,12 +3,7 @@ import { ConfigurationException } from '@infrastructure/exceptions/configuration
 import { TokenSigningException } from '@infrastructure/exceptions/token-signing.exception';
 import { PinoLoggerAdapter } from '@infrastructure/logging/pino-logger.adapter';
 
-import {
-  discardComposition,
-  getBaseLogger,
-  getDependencies,
-  resetDependencies,
-} from '../../../src/bootstrap';
+import { getBaseLogger, getDependencies, resetDependencies } from '../../../src/bootstrap';
 import { generateKeyPairSync } from 'node:crypto';
 
 jest.mock('@infrastructure/config/secret-resolver', () => {
@@ -34,10 +29,8 @@ const { privateKey: PRIVATE_KEY } = generateKeyPairSync('rsa', {
 
 const ENVIRONMENT: NodeJS.ProcessEnv = {
   NODE_ENV: 'test',
-  DATABASE_HOST: 'localhost',
-  DATABASE_NAME: 'work_order',
-  DATABASE_SSL: 'false',
-  DATABASE_SECRET: '{"username":"postgres","password":"postgres"}',
+  IDENTITY_INTERNAL_URL: 'http://localhost:4010',
+  WORK_ORDER_INTERNAL_URL: 'http://localhost:4010',
   CUSTOMER_JWT_PRIVATE_KEY: PRIVATE_KEY,
   CUSTOMER_JWT_KEY_ID: 'customer-auth-test',
   LOG_LEVEL: 'silent',
@@ -52,53 +45,27 @@ describe('bootstrap', () => {
     resolverFactory.mockClear();
   });
 
-  afterEach(async () => {
-    const dependencies = await getDependencies().catch(() => undefined);
-
-    await dependencies?.pool.end();
+  afterEach(() => {
     resetDependencies();
     process.env = original;
-  });
-
-  it('should recompose after the memoized composition is discarded', async () => {
-    const first = await getDependencies();
-
-    discardComposition();
-
-    const second = await getDependencies();
-
-    expect(second).not.toBe(first);
-
-    // Só a composição descartada é encerrada aqui: a corrente é a memoizada, e
-    // o afterEach a encerra.
-    await first.pool.end();
-  });
-
-  it('should preserve the base logger when the composition is discarded', async () => {
-    const logger = getBaseLogger();
-
-    const dependencies = await getDependencies();
-
-    discardComposition();
-
-    expect(getBaseLogger()).toBe(logger);
-
-    await dependencies.pool.end();
-    resetDependencies();
   });
 
   it('should wire a controller able to answer an invocation', async () => {
     const dependencies = await getDependencies();
 
-    expect(dependencies.createController(getBaseLogger())).toBeDefined();
-    expect(dependencies.pool).toBeDefined();
+    expect(
+      dependencies.createController(getBaseLogger(), {
+        requestId: 'req-1',
+        traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
+      }),
+    ).toBeDefined();
   });
 
   /**
-   * A memoização é o motivo de a composição existir num ponto só: as três
-   * inicializações caras ocorrem uma vez por ambiente, e não uma por invocação.
+   * Memoization is why the composition lives in a single place: the secret and
+   * the key import happen once per environment, not once per invocation.
    */
-  it('should not fetch the secrets again on a second call', async () => {
+  it('should not fetch the secret again on a second call', async () => {
     const first = await getDependencies();
     const second = await getDependencies();
 
@@ -107,24 +74,7 @@ describe('bootstrap', () => {
 
     const resolver = resolverFactory.mock.results[0].value as { resolve: jest.Mock };
 
-    expect(resolver.resolve).toHaveBeenCalledTimes(2);
-  });
-
-  it('should resolve the two secrets in parallel', async () => {
-    await getDependencies();
-
-    const resolver = resolverFactory.mock.results[0].value as { resolve: jest.Mock };
-
-    // Duas chamadas disparadas antes de qualquer uma resolver: serializá-las
-    // custaria uma ida de rede inteira no caminho frio.
-    expect(resolver.resolve).toHaveBeenCalledTimes(2);
-  });
-
-  it('should keep a single timings collector and a single pool per environment', async () => {
-    const dependencies = await getDependencies();
-
-    expect((await getDependencies()).timings).toBe(dependencies.timings);
-    expect((await getDependencies()).pool).toBe(dependencies.pool);
+    expect(resolver.resolve).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -141,7 +91,7 @@ describe('bootstrap — initialization failure', () => {
   });
 
   it('should fail immediately when a required variable is missing', async () => {
-    process.env = { ...ENVIRONMENT, DATABASE_HOST: undefined, LOG_LEVEL: 'silent' };
+    process.env = { ...ENVIRONMENT, IDENTITY_INTERNAL_URL: undefined };
 
     await expect(getDependencies()).rejects.toThrow(ConfigurationException);
   });
@@ -153,12 +103,12 @@ describe('bootstrap — initialization failure', () => {
   });
 
   /**
-   * As duas falhas de inicialização não são a mesma coisa para quem opera:
-   * configuração inválida é defeito de implantação, e segredo indisponível é
-   * dependência externa que pode voltar sozinha. O evento precisa distingui-las.
+   * The two initialization failures are not the same thing to an operator:
+   * invalid configuration is a deployment defect, and an unavailable secret is an
+   * external dependency that may come back by itself. The event must tell them apart.
    */
   it.each([
-    ['a missing required variable', { DATABASE_HOST: undefined }],
+    ['a missing required variable', { IDENTITY_INTERNAL_URL: undefined }],
     ['an unreadable PEM', { CUSTOMER_JWT_PRIVATE_KEY: 'nem parece um PEM' }],
   ])('should report a deployment defect as app.configuration.invalid — %s', async (_case, over) => {
     const event = jest.spyOn(PinoLoggerAdapter.prototype, 'event');
@@ -189,20 +139,16 @@ describe('bootstrap — initialization failure', () => {
   });
 
   /**
-   * Uma falha transitória não pode condenar o ambiente a devolver a mesma
-   * promessa rejeitada para sempre.
+   * A transient failure must not doom the environment to return the same
+   * rejected promise forever.
    */
   it('should not memoize a failed initialization', async () => {
-    process.env = { ...ENVIRONMENT, DATABASE_HOST: undefined, LOG_LEVEL: 'silent' };
+    process.env = { ...ENVIRONMENT, IDENTITY_INTERNAL_URL: undefined };
 
     await expect(getDependencies()).rejects.toThrow(ConfigurationException);
 
     process.env = { ...ENVIRONMENT };
 
-    const dependencies = await getDependencies();
-
-    expect(dependencies.pool).toBeDefined();
-
-    await dependencies.pool.end();
+    await expect(getDependencies()).resolves.toBeDefined();
   });
 });

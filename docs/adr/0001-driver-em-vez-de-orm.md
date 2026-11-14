@@ -2,7 +2,10 @@
 
 ## Status
 
-Aceito — 2026-08-31
+Substituído pelo [ADR 0007](0007-credencial-e-vinculo-verificados-nos-servicos-donos.md) — 2026-11-14
+
+Aceito em 2026-08-31. A função não acessa mais o banco: a credencial é
+verificada no Identity e o vínculo no work-order.
 
 ## Contexto
 
@@ -84,6 +87,6 @@ privilegiada do que precisa, mitigada por ser somente leitura por construção.
 
 ## Referências
 
-- [Banco de dados](../database.md)
+- [ADR 0007](0007-credencial-e-vinculo-verificados-nos-servicos-donos.md) — a decisão que substitui esta
 - [Testes › Ponta a ponta](../testing.md#ponta-a-ponta--npm-run-teste2e)
 - [API › Identidade externa e autorização por vínculo](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service/blob/main/docs/architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo) — o modelo de identidade que esta função lê

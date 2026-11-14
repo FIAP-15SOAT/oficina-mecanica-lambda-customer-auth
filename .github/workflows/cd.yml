@@ -23,12 +23,12 @@ env:
   AWS_REGION: us-east-1
   TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
   TF_VAR_aws_base_state_bucket: ${{ vars.TF_STATE_BUCKET }}
-  TF_VAR_database_state_bucket: ${{ vars.TF_STATE_BUCKET }}
+  TF_VAR_k8s_state_bucket: ${{ vars.TF_STATE_BUCKET }}
   TF_VAR_gateway_state_bucket: ${{ vars.TF_STATE_BUCKET }}
   TF_IN_AUTOMATION: "true"
-  # CPF estruturalmente válido e inexistente: a recusa de credencial é a
-  # resposta que prova a cadeia inteira sem depender de dado real.
-  SYNTHETIC_CPF: "123.456.789-09"
+  # Structurally valid CPF absent from every seed: the credential refusal is the
+  # answer that proves the whole chain without relying on real data.
+  SYNTHETIC_CPF: "529.982.247-25"
   SYNTHETIC_PASSWORD: "SenhaSinteticaDeVerificacao"
 
 jobs:
@@ -68,8 +68,8 @@ jobs:
             exit 1
           fi
 
-          # A coleta é opcional, mas ligá-la sem credencial produziria uma
-          # camada anexada que não entrega nada.
+          # Collection is optional, but turning it on without a credential would produce
+          # an attached layer that delivers nothing.
           if [ "${ENABLE_TELEMETRY_COLLECTION}" = "true" ] && [ -z "${DD_API_KEY}" ]; then
             echo "::error::DD_API_KEY não está configurado nos segredos do environment production, mas ENABLE_TELEMETRY_COLLECTION está ligada."
             exit 1
@@ -141,8 +141,8 @@ jobs:
             echo "api_endpoint=$(terraform output -raw api_endpoint)"
           } >> "$GITHUB_OUTPUT"
 
-      # A infraestrutura declara o contêiner do segredo; o **valor** é escrito
-      # aqui, para que o material da chave não transite pelo state.
+      # The infrastructure declares the secret container; the **value** is written
+      # here, so the key material does not pass through the state.
       - name: Write the signing key value idempotently
         if: github.event_name != 'workflow_dispatch' || inputs.action != 'destroy'
         env:
@@ -191,13 +191,14 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Primeiro portão: a invocação direta prova, em cadeia, que o pacote
-      # carrega, a configuração é válida, os dois segredos foram lidos, a chave
-      # importou e a interface de rede alcança o banco.
+      # First gate: the direct invocation proves, in a chain, that the package
+      # loads, the configuration is valid, the signing key secret was read, the key
+      # imported and the network interface reaches the Identity through the
+      # internal NLB.
       #
-      # A discriminação vem do tradutor de respostas: 401 = banco alcançado sem
-      # correspondência; 503 = a operação no banco falhou; 500 = configuração ou
-      # assinatura; ausência de resposta = pacote ou rede.
+      # The discrimination comes from the response translator: 401 = the Identity
+      # answered and refused the credential; 503 = the call to the Identity failed;
+      # 500 = configuration or signing; no response = package or network.
       - name: Post-deploy gate — real invocation
         env:
           FUNCTION_NAME: ${{ needs.deploy.outputs.function_name }}
@@ -241,19 +242,19 @@ jobs:
           status="$(jq -r '.statusCode // empty' /tmp/gate-response.json)"
           case "${status}" in
             401) echo "Portão 1 aprovado: a função recusou a credencial." ;;
-            503) echo "::error::A função respondeu indisponibilidade: a operação no banco falhou. A causa — rede, credencial ou schema — está na linha db.query.failed do log da função."; exit 1 ;;
+            503) echo "::error::A função respondeu indisponibilidade: a chamada ao Identity pelo NLB interno falhou. A causa — rede, timeout ou resposta inesperada — está na linha internal.call.failed do log da função"; exit 1 ;;
             500) echo "::error::A função respondeu erro interno — configuração inválida ou falha de assinatura."; exit 1 ;;
             "")  echo "::error::A invocação não produziu resposta da aplicação — pacote ou rede quebrados."; exit 1 ;;
             *)   echo "::error::A função respondeu ${status}, e o portão exige 401."; exit 1 ;;
           esac
 
-      # Portão final: o único elo que a invocação direta não exercita é a
-      # autorização de invocação concedida ao API Gateway — e é justamente o elo cuja
-      # ausência faz a rota pública responder erro de integração com a função
-      # existindo e saudável.
+      # Second gate: the only link the direct invocation does not exercise is the
+      # invoke permission granted to the API Gateway — precisely the link whose
+      # absence makes the public route answer an integration error while the function
+      # exists and is healthy.
       #
-      # A rota não declara autorizador próprio, então uma recusa de credencial
-      # aqui só pode ter vindo da função.
+      # The route declares no authorizer of its own, so a credential refusal here
+      # can only have come from the function.
       - name: Post-deploy gate — public route
         env:
           API_ENDPOINT: ${{ needs.deploy.outputs.api_endpoint }}
@@ -275,3 +276,58 @@ jobs:
           fi
 
           echo "Portão 2 aprovado: a rota pública é atendida pela função."
+
+      # Final gate: only a real customer's login exercises the customer link in
+      # the work-order and proves the work-order accepts the token the function
+      # signs. The token and the response body are never printed.
+      - name: Post-deploy gate — seeded customer login
+        env:
+          API_ENDPOINT: ${{ needs.deploy.outputs.api_endpoint }}
+          SEEDED_CUSTOMER_CPF: ${{ secrets.SEEDED_CUSTOMER_CPF }}
+          SEEDED_CUSTOMER_PASSWORD: ${{ secrets.SEEDED_CUSTOMER_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SEEDED_CUSTOMER_CPF}" ] || [ -z "${SEEDED_CUSTOMER_PASSWORD}" ]; then
+            echo "::error::Os secrets SEEDED_CUSTOMER_CPF e SEEDED_CUSTOMER_PASSWORD precisam estar cadastrados no repositório para o portão do login válido"
+            exit 1
+          fi
+
+          body="$(jq -nc --arg cpf "${SEEDED_CUSTOMER_CPF}" --arg password "${SEEDED_CUSTOMER_PASSWORD}" '{ cpf: $cpf, password: $password }')"
+
+          status="$(curl -sS -o /tmp/login-response.json -w '%{http_code}' \
+            -X POST "${API_ENDPOINT}/customer-auth/login" \
+            -H 'content-type: application/json' \
+            -d "${body}")"
+
+          echo "Status do login do cliente semeado: ${status}"
+
+          case "${status}" in
+            200) ;;
+            401) echo "::error::O login do cliente semeado foi recusado (401): o usuário não está semeado no Identity, a senha do secret não confere com a do seed ou falta o vínculo ativo dele com um cliente no work-order"; exit 1 ;;
+            *)   echo "::error::O login do cliente semeado respondeu ${status}, e o portão exige 200"; exit 1 ;;
+          esac
+
+          token="$(jq -r '.data.accessToken // empty' /tmp/login-response.json)"
+          rm -f /tmp/login-response.json
+
+          if [ -z "${token}" ]; then
+            echo "::error::O login do cliente semeado respondeu 200 sem o token de acesso"
+            exit 1
+          fi
+
+          echo "::add-mask::${token}"
+
+          status="$(curl -sS -o /dev/null -w '%{http_code}' \
+            "${API_ENDPOINT}/api/me/work-orders" \
+            -H "authorization: Bearer ${token}")"
+
+          echo "Status de GET /api/me/work-orders: ${status}"
+
+          case "${status}" in
+            200) ;;
+            401 | 403) echo "::error::O work-order recusou o token do login válido (${status}): a assinatura, o emissor ou a audiência do token não conferem com o que o work-order aceita"; exit 1 ;;
+            *)         echo "::error::GET /api/me/work-orders respondeu ${status} com o token do login válido, e o portão exige 200"; exit 1 ;;
+          esac
+
+          echo "Portão 3 aprovado: o login do cliente semeado gera um token aceito pelo work-order"

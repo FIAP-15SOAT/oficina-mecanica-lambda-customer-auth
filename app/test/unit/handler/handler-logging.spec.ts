@@ -2,11 +2,15 @@ import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 
 import { getBaseLogger, getDependencies } from '../../../src/bootstrap';
 import { handler } from '../../../src/handler';
-import { DatabaseOperationException } from '@infrastructure/exceptions/database-operation.exception';
+import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 import { TokenSigningException } from '@infrastructure/exceptions/token-signing.exception';
 import { DECLARED_FIELD_NAMES } from '@infrastructure/logging/field-registry';
 
-import { createMockCustomerUser, FORMATTED_CPF, VALID_CPF } from '../../helpers/auth-mock.factory';
+import { FORMATTED_CPF, VALID_CPF } from '../../helpers/auth-mock.factory';
+import {
+  readCustomerAuthenticationFixture,
+  readUserCustomersFixture,
+} from '../../helpers/contract-fixtures';
 import { createMockDependencies, MockDependencies } from '../../helpers/dependencies-mock.factory';
 import { buildContext, buildEvent, buildJsonEvent } from '../../helpers/platform-event.factory';
 
@@ -29,8 +33,18 @@ describe('handler — invocation log', () => {
   });
 
   function grantAccess(): void {
-    mocks.identityRepository.findByCpf.mockResolvedValue(createMockCustomerUser());
-    mocks.hashService.compare.mockResolvedValue(true);
+    mocks.identityCustomerCredentialsGateway.authenticate.mockResolvedValue(
+      readCustomerAuthenticationFixture(),
+    );
+    mocks.workOrderUserCustomersGateway.findActiveByUserId.mockResolvedValue(
+      readUserCustomersFixture(),
+    );
+  }
+
+  function sentTraceId(): string {
+    const [, callContext] = mocks.dependencies.createController.mock.calls[0];
+
+    return callContext.traceparent.split('-')[1];
   }
 
   function invocationLine() {
@@ -47,9 +61,9 @@ describe('handler — invocation log', () => {
   });
 
   /**
-   * Uma falha de composição também é um atendimento: sem esta linha o 500 de
-   * cold start sairia sem correlação e sem duração, fora de qualquer consulta
-   * por request id ou SLI.
+   * A composition failure is also an invocation: without this line the cold
+   * start 500 would leave without correlation or duration, outside any query by
+   * request id or SLI.
    */
   it('should still emit the invocation line when the composition fails', async () => {
     dependenciesMock.mockRejectedValue(new Error('secrets manager indisponível'));
@@ -69,15 +83,6 @@ describe('handler — invocation log', () => {
     expect(line?.['oficina.faas.invocation.duration_ms']).toEqual(expect.any(Number));
   });
 
-  it('should omit the phase durations when the composition never ran', async () => {
-    dependenciesMock.mockRejectedValue(new Error('secrets manager indisponível'));
-
-    await handler(buildJsonEvent(CREDENTIAL), buildContext());
-
-    expect(invocationLine()?.['oficina.db.query.duration_ms']).toBeUndefined();
-    expect(invocationLine()?.['oficina.auth.password.verification.duration_ms']).toBeUndefined();
-  });
-
   it.each([
     ['info', 200],
     ['warn', 401],
@@ -85,41 +90,15 @@ describe('handler — invocation log', () => {
   ])('should derive the level %s from the response status', async (level, statusCode) => {
     if (statusCode === 200) {
       grantAccess();
-    } else if (statusCode === 401) {
-      mocks.identityRepository.findByCpf.mockResolvedValue(createMockCustomerUser());
-    } else {
-      mocks.identityRepository.findByCpf.mockRejectedValue(
-        new DatabaseOperationException('busca', { cause: new Error('timeout') }),
+    } else if (statusCode === 503) {
+      mocks.identityCustomerCredentialsGateway.authenticate.mockRejectedValue(
+        new ServiceIntegrationException('POST /internal/customer-authentications'),
       );
     }
 
     await handler(buildJsonEvent(CREDENTIAL), buildContext());
 
     expect(invocationLine()?.level).toBe(level);
-  });
-
-  it('should carry the three durations on a full invocation', async () => {
-    grantAccess();
-
-    await handler(buildJsonEvent(CREDENTIAL), buildContext());
-
-    expect(invocationLine()?.['oficina.faas.invocation.duration_ms']).toEqual(expect.any(Number));
-    expect(invocationLine()?.['oficina.db.query.duration_ms']).toEqual(expect.any(Number));
-    expect(invocationLine()?.['oficina.auth.password.verification.duration_ms']).toEqual(
-      expect.any(Number),
-    );
-  });
-
-  it('should forget the durations of the previous invocation', async () => {
-    grantAccess();
-
-    await handler(buildJsonEvent(CREDENTIAL), buildContext());
-    await handler(buildEvent({ body: '{' }), buildContext());
-
-    const [, rejected] = mocks.capture.lines().filter((line) => line.message === 'http request');
-
-    expect(rejected['oficina.db.query.duration_ms']).toBeUndefined();
-    expect(rejected['oficina.auth.password.verification.duration_ms']).toBeUndefined();
   });
 
   it('should still emit the invocation line when the event carries no requestContext', async () => {
@@ -134,11 +113,11 @@ describe('handler — invocation log', () => {
   });
 
   /**
-   * Um PEM ilegível já é registrado por `bootstrap` como configuração inválida.
-   * Reclassificá-lo aqui como falha de assinatura anunciaria a mesma causa duas
-   * vezes, com nomes contraditórios, apontando o diagnóstico para o runtime em
-   * vez da implantação — e a cada invocação, já que a composição falha não é
-   * memoizada.
+   * An unreadable PEM is already logged by `bootstrap` as invalid configuration.
+   * Reclassifying it here as a signing failure would announce the same cause
+   * twice, under contradictory names, pointing the diagnosis at the runtime
+   * instead of the deployment — and on every invocation, since a failed
+   * composition is not memoized.
    */
   it('should not rename a composition failure as a signing failure', async () => {
     dependenciesMock.mockRejectedValue(new TokenSigningException('chave privada inválida'));
@@ -189,6 +168,29 @@ describe('handler — invocation log', () => {
         .forEach((line) => expect(line['request.id']).toBe(context.awsRequestId));
     });
 
+    it('should carry the trace id of the traceparent on every invocation line', async () => {
+      grantAccess();
+
+      await handler(buildJsonEvent(CREDENTIAL), buildContext());
+
+      expect(mocks.capture.lines()).toHaveLength(2);
+      mocks.capture.lines().forEach((line) => expect(line.trace_id).toBe(sentTraceId()));
+    });
+
+    it('should carry a trace id on the 400 and on the composition failure lines', async () => {
+      await handler(buildEvent({ body: '{' }), buildContext());
+
+      dependenciesMock.mockRejectedValue(new Error('secrets manager indisponível'));
+
+      await handler(buildJsonEvent(CREDENTIAL), buildContext());
+
+      const lines = mocks.capture.lines();
+
+      expect(lines).toHaveLength(3);
+      lines.forEach((line) => expect(line.trace_id).toMatch(/^[0-9a-f]{32}$/));
+      expect(lines[0].trace_id).not.toBe(lines[2].trace_id);
+    });
+
     it('should carry the cold start flag on every line', async () => {
       grantAccess();
 
@@ -212,9 +214,9 @@ describe('handler — invocation log', () => {
     });
 
     /**
-     * O corpo da requisição não é registrado em hipótese alguma. O terceiro caso
-     * é o que uma classificação por nome de campo não pegaria: a credencial
-     * repetida sob uma chave semanticamente neutra.
+     * The request body is never logged. The third case is the one a
+     * classification by field name would miss: the credential repeated under a
+     * semantically neutral key.
      */
     it.each([
       ['the canonical field', { password: 'Senha@123' }],

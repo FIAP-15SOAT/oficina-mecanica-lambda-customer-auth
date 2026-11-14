@@ -20,9 +20,9 @@ describe('resolveErrorType', () => {
   });
 
   /**
-   * Quando uma biblioteca embrulha o erro real num `Error` genérico, o nome útil
-   * está mais abaixo na cadeia — reportar `"Error"` esconderia qual camada
-   * quebrou.
+   * When a library wraps the real error in a generic `Error`, the useful name
+   * sits further down the chain — reporting `"Error"` would hide which layer
+   * broke.
    */
   it('should prefer the specific name found deeper in the cause chain', () => {
     const wrapped = new Error('falha ao aprovar', {
@@ -103,8 +103,8 @@ describe('describeError', () => {
   });
 
   /**
-   * `cause` pode formar ciclo e a cadeia pode ser arbitrariamente longa; sem
-   * limite e sem detecção, serializar o erro trava o processo.
+   * `cause` can form a cycle and the chain can be arbitrarily long; with no limit
+   * and no detection, serializing the error hangs the process.
    */
   it('should stop at a cycle in the cause chain', () => {
     const first = new Error('primeiro');
@@ -125,11 +125,11 @@ describe('describeError', () => {
     const stacktrace = describeError(error)['exception.stacktrace'] ?? '';
 
     /**
-     * O limite é afirmado pelos dois lados, e sem depender do comprimento do
-     * stack: o topo da cadeia entra, o quinto elo nunca entra, e o número de
-     * elos não passa do teto. Afirmar uma contagem exata acoplaria o teste ao
-     * truncamento de 8192 caracteres, que varia com o tamanho do caminho
-     * absoluto do projeto — passa no Windows e reprova no runner Linux.
+     * The limit is asserted from both sides, without depending on the stack length:
+     * the top of the chain gets in, the fifth link never does, and the number of
+     * links stays under the ceiling. Asserting an exact count would couple the test
+     * to the 8192-character truncation, which varies with the length of the
+     * project's absolute path — it passes on Windows and fails on the Linux runner.
      */
     expect(stacktrace).toContain('nível 10');
     expect(stacktrace).not.toContain('nível 6');
