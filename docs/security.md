@@ -6,38 +6,42 @@ credencial de cliente trafega.
 
 ## Modelo de ameaças
 
-### Custódia da credencial do banco
+### Sem credencial de banco
 
-A master password é gerada/gerenciada pelo RDS e armazenada no Secrets Manager,
-com rotação automática desabilitada pelo database. Terraform recebe somente
-ARN e metadados, não o valor; `sensitive` apenas ocultaria a apresentação e não
-seria proteção contra State. A Lambda lê o Secret diretamente por
-`DATABASE_SECRET_ID`, sem GitHub password nem Kubernetes como intermediário.
+A função não acessa banco de dados e não recebe credencial, endereço ou regra de
+rede de banco algum. A senha do cliente é verificada pelo **Identity**, o serviço
+que guarda os usuários e as senhas: a função a repassa, junto com o CPF, no corpo
+de `POST /internal/customer-authentications`, e nunca vê o hash. Os vínculos
+entre usuário e cliente são conferidos no **work-order**, o serviço das ordens de
+serviço. A decisão está no
+[ADR 0007](adr/0007-credencial-e-vinculo-verificados-nos-servicos-donos.md).
 
-O valor existe também na memória do ambiente da Lambda e na configuração/pool
-do driver. Separadamente, a projeção da API existe na memória/environment do
-runner de CD, no Kubernetes Secret/armazenamento do cluster e nos containers.
-Secrets Manager é a fonte de verdade, não o único local materializado.
-Nenhuma mudança de runtime/pool ou de menor privilégio foi introduzida;
-habilitar rotação exige nova change.
+### As chamadas internas
 
-[ADR 0003 do database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md).
+As duas chamadas usam HTTP sem TLS até o NLB (Network Load Balancer), o
+balanceador de rede **interno** do cluster Kubernetes onde os serviços rodam: ele
+só aceita tráfego de dentro da VPC, e a função executa nas subnets privadas. As
+chamadas não levam credencial de serviço: as rotas `/internal/...` não são
+publicadas pelo API Gateway, e a proteção delas é a fronteira de rede. Autenticar
+as chamadas internas entre serviços é uma decisão adiada da solução, que vale
+para todos os serviços, não só para esta função.
 
 ### Superfícies do login
 
 | Ameaça | Superfície | Mitigação |
 | --- | --- | --- |
 | Enumeração de contas | Resposta de erro do login | Mensagem, status e corpo **idênticos** nas quatro causas de recusa |
-| Enumeração por temporização | Diferença de tempo entre as causas | **Não mitigada** — risco aceito, alinhado à API; ver abaixo |
+| Enumeração por temporização | Diferença de tempo entre as causas | **Não mitigada** — risco aceito; ver abaixo |
 | Força bruta por conta | Repetição contra um CPF | **Não mitigada** — ver abaixo |
 | Vazamento de credencial em log | — | O corpo da requisição **nunca** é registrado; asserção negativa unitária e de ponta a ponta |
 | Vazamento de dado pessoal em log | CPF na requisição | Mascarado preservando a forma (`***.***.789-09`), pela classificação do registro |
-| Vazamento de detalhe interno | Corpo das respostas `500`/`503` | Mensagem constante; nada da exceção é repassado |
-| Injeção de SQL | Único parâmetro da consulta | Consulta parametrizada, CPF já reduzido a 11 dígitos pela validação |
-| Confusão de algoritmo no token | Verificação na API | `RS256` assimétrico, verificado por estratégia separada da interna; o token externo nunca alcança o verificador HMAC |
+| Vazamento de detalhe interno | Corpo das respostas `500`/`503` | Mensagem constante; nada da exceção — URL interna, status devolvido pelo serviço — é repassado |
+| Vazamento da senha numa chamada interna que falha | O erro do cliente HTTP guarda o corpo enviado ao Identity | O log registra tipo, mensagem saneada e as pilhas da cadeia de causas, nunca o corpo nem a configuração da requisição; asserção de ponta a ponta com o Identity estourando o tempo e respondendo redirect |
+| Resposta inesperada lida como recusa | Status do Identity fora do contrato | Só o `401` do Identity é recusa; qualquer outro 4xx, 5xx ou redirect responde `503`, nunca `401` |
+| Confusão de algoritmo no token | Verificação no work-order | `RS256` assimétrico, verificado por estratégia separada da interna; o token externo nunca alcança o verificador HMAC |
 | Escalonamento por claim forjada | Conteúdo do token | Além de `iss`, `aud`, `iat` e `exp`, o token carrega `sub` como identidade; papel e escopo nunca vêm dele |
 | Corpo hostil como negação de serviço | Corpo da requisição | Limite de 4096 bytes depois da decodificação base64 e antes da desserialização JSON |
-| Perda de conexões do banco | Concorrência | Pool de tamanho um por ambiente e reserva configurável com default 10; orçamento compartilhado precisa ser validado — ver [Banco](database.md#orçamento-de-conexões) |
+| Sobrecarga do Identity | Concorrência de logins | Cada login custa ao Identity uma verificação de hash de senha, que consome CPU; a concorrência reservada da função, padrão 10, limita quantas acontecem ao mesmo tempo |
 | Análise dinâmica ausente | Superfície pública | A função não expõe superfície HTTP própria; a decisão e o que cobre a superfície no lugar estão no [ADR 0006](adr/0006-sem-analise-dinamica.md) |
 
 ## Anti-enumeração
@@ -46,34 +50,37 @@ As quatro causas de recusa — CPF inexistente, conta inativa, senha incorreta e
 ausência de vínculo com cliente ativo — produzem **exatamente** a mesma resposta:
 `401`, mesmo corpo, mesma mensagem. A causa específica existe apenas no log.
 
+O Identity responde o mesmo `401` para CPF inexistente, conta inativa e senha
+incorreta, e registra a causa no próprio log. Esta função recusa em duas etapas
+— `credential_refused` quando o Identity recusa, `no_active_customer_link` quando
+o work-order não devolve cliente ativo — e as duas produzem a mesma exceção.
+
 Nada na resposta permite descobrir se um CPF existe no sistema. Um teste
-unitário compara as quatro exceções produzidas e afirma que são indistinguíveis;
-um teste de ponta a ponta compara as respostas de "senha incorreta" e "CPF
-inexistente" e afirma que são byte a byte iguais.
+unitário afirma que as duas etapas produzem exceções indistinguíveis; um teste de
+ponta a ponta compara as respostas de "CPF inexistente", "senha incorreta" e "sem
+cliente ativo" e afirma que são byte a byte iguais.
 
 ## Enumeração por temporização — risco aceito
 
 A mensagem única fecha metade do problema. A outra metade é o **tempo**.
 
-A verificação de senha custa centenas de milissegundos; as demais recusas — CPF
-inexistente, conta inativa — retornam antes dela. A ausência de vínculo
-ativo é avaliada depois de comparar a senha, conforme o caso de uso. **Essa diferença é observável**, e permite inferir se um
+A verificação de senha, feita pelo Identity, custa centenas de milissegundos; as
+recusas por CPF inexistente e por conta inativa retornam antes dela. A ausência
+de vínculo ativo só é avaliada depois de a senha conferir, e custa ainda a
+chamada ao work-order. **Essa diferença é observável**, e permite inferir se um
 CPF está cadastrado mesmo com as quatro respostas idênticas.
 
-**A decisão é conviver com isso**, alinhada à API principal, que aplica a mesma
-ordem de avaliação no seu fluxo de autenticação. Fechar a diferença exigiria
-comparar sempre contra um hash de referência quando não há usuário — o custo é
-uma constante e um `??`, mas o comportamento passaria a divergir do da API, e a
-consistência entre os dois lados foi considerada mais valiosa que a mitigação de
-um canal lateral de baixa severidade.
+**A decisão é conviver com isso.** A ordem de avaliação é a do Identity, dono da
+credencial, e o login interno dos funcionários tem a mesma diferença. A resposta
+idêntica fecha a enumeração pelo conteúdo; o tempo é um canal lateral de baixa
+severidade.
 
 **O que reduz o risco na prática:** a limitação de frequência por rota no
 gateway encarece a varredura em volume. **O que não reduz:** nada impede a
 medição pontual de um CPF específico.
 
 **Gatilho para revisitar:** se a enumeração de CPFs cadastrados passar a ser
-tratada como risco relevante, ou se a API adotar o compare incondicional, esta
-função deve acompanhar.
+tratada como risco relevante, a mudança é no Identity, que faz a verificação.
 
 ## Custódia da chave
 
@@ -81,7 +88,7 @@ função deve acompanhar.
 | --- | --- |
 | Algoritmo | `RS256` |
 | Chave privada | somente a função, obtida do gerenciador de segredos na inicialização |
-| Chave pública | distribuída à API |
+| Chave pública | distribuída ao work-order |
 | Independência | separada de qualquer segredo da autenticação interna |
 | Identificador | `kid` no cabeçalho desde a primeira versão |
 
@@ -131,8 +138,9 @@ contêiner do segredo e não o seu valor; a entrega grava o valor de forma
 idempotente. Declará-lo na infraestrutura o colocaria em texto puro num bucket
 compartilhado pelas seis stacks Terraform.
 
-A metade pública correspondente é configurada no ambiente da API e no seu
-Secret Kubernetes pelo CD; ela não precisa ser versionada para verificar o token. As duas metades são do mesmo par, gerado uma única vez fora
+A metade pública correspondente é configurada no ambiente do work-order e no
+seu Secret Kubernetes pelo CD dele; ela não precisa ser versionada para verificar
+o token. As duas metades são do mesmo par, gerado uma única vez fora
 de qualquer repositório.
 
 Nenhum segredo real é versionado em nenhum arquivo: `app/.env.example` contém
@@ -156,9 +164,9 @@ nomeada, pelo status e pelo CPF mascarado — não sobra informação operaciona
 justifique capturar o payload.
 
 O saneamento de texto livre — mensagem de exceção e pilha — usa o **mesmo**
-conjunto de padrões de segredo da API (`password`, `pwd`, `secret`, `api_key`
+conjunto de padrões de segredo dos serviços (`password`, `pwd`, `secret`, `api_key`
 como par chave=valor, além de JWT, esquema de autenticação e credencial embutida
-em URL). Não há divergência de classificação entre os dois serviços.
+em URL). Não há divergência de classificação entre a função e os serviços.
 
 Detalhes em [Logging](logging.md).
 
@@ -170,7 +178,7 @@ A distinção importa e é fácil de confundir:
 
 | Mecanismo | Do que protege | Do que **não** protege |
 | --- | --- | --- |
-| Limitação de frequência da rota, no gateway | Sobrecarga do serviço; um cliente sozinho saturando a função e as conexões do banco | Tentativas repetidas contra **uma** conta, distribuídas abaixo do limite ou entre origens |
+| Limitação de frequência da rota, no gateway | Sobrecarga do serviço; um cliente sozinho saturando a função e o Identity | Tentativas repetidas contra **uma** conta, distribuídas abaixo do limite ou entre origens |
 | Bloqueio com estado por conta | Força bruta por conta | — (não existe) |
 | Regra por origem em firewall de aplicação | Força bruta de uma origem | — (não existe) |
 
@@ -184,24 +192,25 @@ sem estado por construção —, ou seja, um contador externo ou uma regra no
 firewall de aplicação. Nenhuma das duas existe, e esta seção existe para que a
 limitação do gateway não seja lida como se já a resolvesse.
 
-**A concorrência reservada não é anti-força-bruta.** Ela protege o orçamento de
-conexões do banco compartilhado, que é a linha correspondente da tabela de
+**A concorrência reservada não é anti-força-bruta.** Ela limita a carga de
+verificações de senha no Identity, que é a linha correspondente da tabela de
 ameaças — não esta.
 
 ## Superfície de dependências
 
-Cinco dependências de runtime: driver PostgreSQL, biblioteca de assinatura,
-bcrypt em JavaScript puro, logger e validador de esquema. Nenhuma é módulo
-nativo, e a biblioteca de assinatura tem **zero** dependências transitivas —
-numa função de segurança sujeita a varredura, é redução mensurável de
-superfície.
+Quatro dependências de runtime próprias: cliente HTTP (`axios`), biblioteca de
+assinatura (`jose`), logger (`pino`) e validador de esquema (`zod`). Nenhuma é
+módulo nativo, e a biblioteca de assinatura tem **zero** dependências
+transitivas — numa função de segurança sujeita a varredura, é redução mensurável
+de superfície.
 
 Nenhuma biblioteca de fornecedor de observabilidade está presente: a saída é
 stdout, e a coleta é responsabilidade da infraestrutura — uma camada anexada à
 função, configurada por variáveis de ambiente, sem uma linha em `src/`. Ver
 [ADR 0005](adr/0005-coleta-de-telemetria-sem-instrumentacao.md).
 
-O cliente do gerenciador de segredos é a sexta dependência de runtime, embutida
+O cliente do gerenciador de segredos (`@aws-sdk/client-secrets-manager`) é a
+quinta dependência de runtime, embutida
 no pacote em vez de consumida do ambiente de execução — a razão está no
 [ADR 0004](adr/0004-empacotamento-e-publicacao.md). Ela é fixada pelo arquivo de
 bloqueio como todas as outras, e por isso **entra na varredura**, o que a versão
@@ -212,7 +221,7 @@ fornecida pelo ambiente não fazia.
 Ela vai como variável de ambiente da função, e portanto é legível por quem puder
 ler a configuração da função.
 
-É paridade deliberada com a API, onde a mesma credencial é um Secret do cluster —
+É paridade deliberada com os serviços, onde a mesma credencial é um Secret do cluster —
 codificado, legível por quem tiver permissão de leitura no espaço de nomes. Numa
 conta de laboratório com role ampla, a diferença é nominal.
 

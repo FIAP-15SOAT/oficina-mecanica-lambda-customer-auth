@@ -7,13 +7,13 @@ Nenhuma linha de `src/` conhece o fornecedor.
 
 ### Uma linha estruturada por invocação
 
-Exatamente uma, com tudo o que responde "onde o tempo foi gasto":
+Exatamente uma, com o que responde "o que aconteceu e quanto demorou":
 
 | Campo | O que carrega |
 | --- | --- |
 | Duração total | Do início ao fim da invocação |
-| Duração da consulta | A única ida ao banco |
-| Duração da verificação de senha | Termo tipicamente dominante da latência |
+| Status da resposta | `200`, `400`, `401`, `500` ou `503` |
+| Correlação | `request.id` e `trace_id` — ver [Os eixos de correlação](#os-eixos-de-correlação) |
 | Indicador de partida a frio | Se este ambiente de execução é novo |
 | Atributos de execução | Identificador de invocação, nome, versão e instância da função, memória, região e identificador do recurso |
 | Atributos de recurso | Nome, namespace, **versão** e ambiente do serviço |
@@ -22,11 +22,17 @@ A versão do serviço é o identificador do commit implantado, injetado pela
 entrega. Toda linha responde "qual código está em execução" sem consultar a
 nuvem.
 
+A duração de cada chamada interna não está na linha: ela aparece no span do
+Identity, o serviço que verifica a credencial, e no do work-order, o serviço que
+devolve os clientes vinculados ao usuário, com o mesmo `trace_id`.
+
 ### Eventos nomeados
 
-Recusa de entrada, falha de consulta, configuração inválida, falha de assinatura,
-falha de inicialização — cada um com nome de catálogo, e sem credencial nem dado
-pessoal em texto puro. Detalhes em [Logging](logging.md).
+Recusa de entrada, recusa de credencial em duas etapas (`credential_refused` e
+`no_active_customer_link`), falha de chamada interna (`internal.call.failed`),
+configuração inválida, falha de assinatura, falha de inicialização — cada um com
+nome de catálogo, e sem credencial nem dado pessoal em texto puro. Detalhes em
+[Logging](logging.md).
 
 ### O que a plataforma produz sozinha
 
@@ -40,7 +46,7 @@ ambiente. **Zero mudança no código da função** — nem dependência, nem inv
 de ponto de entrada, nem biblioteca de instrumentação, nem chamada de
 fornecedor. O ponto de entrada declarado continua sendo o da aplicação.
 
-É o mesmo desenho da API, onde a aplicação emite sinal neutro e um agente
+É o mesmo desenho dos serviços, onde a aplicação emite sinal neutro e um agente
 separado traduz para o destino. Trocar de destino muda a camada anexada e as
 variáveis de ambiente, e nada mais.
 
@@ -58,51 +64,54 @@ nenhuma.
 
 `DD_ENV` é fixo em `production`, e não acompanha o nome do ambiente desta
 stack — que é `prod-simulated`. O valor não descreve onde a infraestrutura vive:
-ele nomeia, no destino de telemetria, **o ambiente observado**. A API emite
-`env:production`, e uma função que emitisse `prod-simulated` ficaria de fora de
-qualquer consulta, dashboard ou alerta escopado por ambiente. O nome da stack
-continua sendo `prod-simulated` em toda a nomenclatura de recurso da AWS.
+ele nomeia, no destino de telemetria, **o ambiente observado**. Os serviços
+emitem `env:production`, e uma função que emitisse `prod-simulated` ficaria de
+fora de qualquer consulta, dashboard ou alerta escopado por ambiente. O nome da
+stack continua sendo `prod-simulated` em toda a nomenclatura de recurso da AWS.
 
 Destino e versão da camada são constantes versionadas, e não variáveis do
 provedor: revisáveis no Pull Request, com diferença visível, sem estado escondido
 na configuração. Alterá-los exige um commit, que é a propriedade desejada.
 
 A credencial do destino vai como variável de ambiente da função, em paridade com
-a API — onde a mesma credencial é um Secret do cluster, legível por quem tiver
-permissão de leitura no espaço de nomes. Aqui é legível por quem puder ler a
-configuração da função. O fornecedor recomenda guardá-la no gerenciador de
+os serviços — onde a mesma credencial é um Secret do cluster, legível por quem
+tiver permissão de leitura no espaço de nomes. Aqui é legível por quem puder ler
+a configuração da função. O fornecedor recomenda guardá-la no gerenciador de
 segredos e referenciá-la por identificador; isso acrescentaria um recurso e uma
 leitura por partida a frio para uma diferença que este ambiente não realiza.
 Registrado em [Segurança](security.md).
 
-## Os dois eixos de correlação
-
-Ambos já existem — nenhum identificador sintético é criado para suprir a ausência
-de trace.
+## Os eixos de correlação
 
 | Eixo | Liga |
 | --- | --- |
-| Identificador de correlação recebido do API Gateway | API Gateway → função, quando o cabeçalho passa pelo validador da Lambda. A chamada posterior à API é outra requisição e tem seu próprio ID |
-| Identificador de invocação da plataforma | A linha da aplicação ao registro de invocação no destino de telemetria |
+| `request.id`, o identificador de correlação | API Gateway → função, quando o cabeçalho `x-request-id` ou `x-correlation-id` recebido passa pelo validador da função; função → Identity e work-order, que o recebem em `x-request-id` |
+| `trace_id`, o identificador do trace | Função → Identity e work-order: a função gera o contexto de trace e o envia no cabeçalho `traceparent` (padrão W3C Trace Context); os dois serviços continuam o trace, e os spans deles levam o mesmo `trace_id` das linhas da função |
+| `faas.invocation_id`, o identificador de invocação da plataforma | A linha da aplicação ao registro de invocação no destino de telemetria |
+
+A requisição posterior ao work-order com o token emitido é outro atendimento,
+com identificadores próprios.
 
 ## O que deliberadamente não é instrumentado
 
-Nem trace distribuído, nem exportador de trace, nem métrica de negócio.
+Nem SDK de trace, nem span próprio da função, nem exportador de trace, nem
+métrica de negócio.
 
-**A função é uma folha no fluxo de aplicação:** não chama a API principal
-nem encadeia outra função. Ela acessa PostgreSQL e Secrets Manager, mas
-não instrumenta essas chamadas com spans. As durações que um trace
-produziria — banco e verificação de senha — **já constam da linha de invocação**,
-e o custo de partida a frio de um kit de instrumentação não se paga contra sinal
-que já existe.
-
-O critério é o que o próprio ADR de telemetria da API estabelece: *a lacuna
-dominante não é instrumentação, é coleta*.
-
-**Gatilho para reabrir:** se houver necessidade de spans de banco/segredos
-ou a função passar a encadear serviços de aplicação, avaliar instrumentação
-e medir overhead e custo antes de mudar a decisão. Ver
+**O trace existe sem SDK na função.** O que um span próprio da função mostraria
+— a duração de cada chamada ao Identity e ao work-order — já aparece nos spans
+dos dois serviços, ligados pelo `trace_id`, e a chamada que falhou é nomeada em
+`internal.call.failed`. O custo de partida a frio de um kit de instrumentação não
+se paga contra um span só. A decisão está no
+[ADR 0008](adr/0008-contexto-de-trace-sem-sdk.md), que emenda o
 [ADR 0005](adr/0005-coleta-de-telemetria-sem-instrumentacao.md).
+
+O critério é o que o próprio ADR de telemetria do work-order estabelece: *a
+lacuna dominante não é instrumentação, é coleta*.
+
+**Gatilho para reabrir:** se a função passar a ter etapas próprias que mereçam
+span, ou se for preciso separar o tempo de rede até o NLB (o balanceador de rede
+interno do cluster) do tempo de resposta do serviço, avaliar instrumentação e
+medir overhead e custo antes de mudar a decisão.
 
 ## Verificação da coleta
 
@@ -113,13 +122,15 @@ Um provisionamento verde com o interruptor ligado não prova que a camada
 entrega. Quando a função não aparece, a falha é **da coleta** — distinta de falha
 da função, que continuaria visível no registro de log da plataforma.
 
-Duas conferências fecham o quadro:
+Três conferências fecham o quadro:
 
 1. Uma linha de log da função implantada carrega o identificador do commit em
    execução no atributo de versão de serviço.
 2. Compare `request.id` com `requestId` do Gateway e `faas.invocation_id`
    com o registro da plataforma. A Lambda rejeita IDs com `=`, `+` ou `/`
    e usa o ID da invocação; não presuma igualdade com o Gateway nesse caso.
+3. Procure o `trace_id` de uma linha da função nos traces do Identity e do
+   work-order: o login aparece nos dois com o mesmo identificador.
 
 A configuração atual anexa `Datadog-Extension` versão 99 quando a coleta
 está ligada, usa o site `us5.datadoghq.com` e define `DD_TRACE_ENABLED=false`.

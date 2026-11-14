@@ -2,7 +2,10 @@
 
 ## Status
 
-Aceito — 2026-08-31
+Emendado pelo [ADR 0007](0007-credencial-e-vinculo-verificados-nos-servicos-donos.md) — 2026-11-14
+
+Aceito em 2026-08-31. A decisão 1, bcrypt em JavaScript puro, deixou de valer: a
+senha passou a ser verificada pelo Identity. As decisões 2 e 3 continuam.
 
 ## Contexto
 
@@ -114,5 +117,5 @@ para o hash.
 ## Referências
 
 - [Segurança › Enumeração por temporização](../security.md#enumeração-por-temporização--risco-aceito)
-- [Logging › As três durações](../logging.md#as-três-durações)
+- [ADR 0007](0007-credencial-e-vinculo-verificados-nos-servicos-donos.md) — a decisão que emenda esta
 - [Como executar localmente](../local-setup.md)

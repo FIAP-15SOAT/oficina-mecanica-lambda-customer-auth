@@ -1,7 +1,7 @@
 # CI/CD
 
 A aplicação fica em `app/` e as etapas Terraform executam em `infra/`,
-seguindo a mesma organização da API.
+seguindo a mesma organização dos serviços.
 
 Três workflows, com ciclos de gatilho independentes: validação de integração,
 análise estática e entrega.
@@ -10,7 +10,7 @@ análise estática e entrega.
 | --- | --- | --- | --- |
 | CI | `.github/workflows/ci.yml` | `push` em `feature/**` e `fix/**` | Pull Request aberto para `main` |
 | SAST | `.github/workflows/sast.yml` | Pull Request para `main` e `push` em `main` | Portão de qualidade da análise estática |
-| CD | `.github/workflows/cd.yml` | `push` em `main` e execução manual (`action`: `apply` padrão ou `destroy`) | Rota pública respondendo pela função, em dois jobs (`Deploy Lambda` e `Post-Deploy Gates`), ou destruição da infraestrutura da função quando `action=destroy` |
+| CD | `.github/workflows/cd.yml` | `push` em `main` e execução manual (`action`: `apply` padrão ou `destroy`) | Rota pública respondendo pela função e token aceito pelo work-order, em dois jobs (`Deploy Lambda` e `Post-Deploy Gates`), ou destruição da infraestrutura da função quando `action=destroy` |
 
 ![CI Workflow: os seis jobs de validação — Lint, Type Check, Unit Tests, E2E
 Tests, Package e Terraform Validation — executam em paralelo a partir do push e
@@ -41,7 +41,7 @@ depende de todos.
 | `Lint` | Formatação canônica e a cerca de camadas | Divergência de formatação, ou uma importação de infraestrutura a partir de `domain/` ou `application/` |
 | `Type Check` | Que o código **tipa** | Qualquer erro de tipo. Existe separado porque a construção é `esbuild`, que apaga anotações de tipo **sem verificá-las**: sem este job um erro de tipo é empacotado e publicado |
 | `Unit Tests` | Comportamento com cobertura total | Cobertura abaixo de 100% em linhas, instruções, funções ou ramos |
-| `E2E Tests` | Correspondência com o schema real, mantido pela API | Consulta referenciando coluna ou tabela ausente no schema |
+| `E2E Tests` | Que o ponto de entrada entende as respostas publicadas pelo Identity (o serviço que verifica a credencial) e pelo work-order (o serviço que devolve os clientes vinculados ao usuário) e trata a rede como o contrato descreve | Resposta das fixtures não entendida, ou tempo limite, redirect, conexão nova e correlação fora do contrato |
 | `Package` | Que o artefato **carrega** | Alias de caminho sobrevivente no pacote, dependência de carregamento não embutida, ou pacote acima do limite de envio direto |
 | `Terraform Validation` | Formatação, consistência e — quando o ambiente responde — a prévia | Formatação divergente, configuração inconsistente, ou prévia que **execute e falhe** |
 | `Open Pull Request` | — | Não é verificação de validade e não entra nas obrigatórias |
@@ -55,7 +55,7 @@ Sem `needs`; executa em paralelo aos demais jobs de validação.
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
-| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. |
 | 3 | Lint | Executa `npm run lint`; formatação/restrições de camada divergentes reprovam. |
 
 #### `type-check` — Type Check
@@ -65,7 +65,7 @@ Sem `needs`; executa em paralelo aos demais jobs de validação.
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
-| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. |
 | 3 | Type check | Executa `npm run typecheck`; erro de tipo reprova antes do empacotamento esbuild. |
 
 #### `unit-tests` — Unit Tests
@@ -75,7 +75,7 @@ Sem `needs`; executa em paralelo aos demais jobs de validação.
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
-| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. |
 | 3 | Unit tests with coverage | Executa `npm run test:cov` e exige os limiares de cobertura do projeto. |
 
 #### `e2e-tests` — E2E Tests
@@ -85,10 +85,8 @@ Sem `needs`; executa em paralelo aos demais jobs de validação.
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
-| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
-| 3 | Check out the API repository at the pinned commit | Obtém a API em `API_MIGRATOR_COMMIT` para usar o schema real; não acompanha main implicitamente. |
-| 4 | Build the migrator image from source | Constrói localmente a imagem migradora da API no commit fixado. |
-| 5 | E2E tests against the API-owned schema | Executa a suíte E2E com o schema da API em banco descartável; incompatibilidade reprova. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. |
+| 3 | E2E tests against the owners' stubs | Executa `npm run test:e2e`: o ponto de entrada real contra o stub HTTP do Identity e do work-order, servido com as fixtures em `app/test/contracts/`; nenhum contêiner nem clone de outro repositório. |
 
 #### `package` — Package
 
@@ -97,7 +95,7 @@ Sem `needs`; executa em paralelo aos demais jobs de validação.
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
-| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. |
 | 3 | Build | Compila/empacota a aplicação em `app/dist` com o comando de build do projeto. |
 | 4 | Load the entry point with no dependencies installed | Carrega o pacote em diretório temporário fora da árvore, sem node_modules, e exige a exportação do handler. |
 | 5 | Check the package against the direct upload limit | Compacta/verifica o tamanho frente ao limite de envio direto da função; excesso reprova. |
@@ -113,7 +111,7 @@ Sem `needs`; executa em paralelo aos demais jobs de validação.
 | 3 | Terraform Fmt Check | Executa `terraform fmt -check -recursive`; divergência de formatação reprova o job. |
 | 4 | Terraform Init Lambda Customer Auth | Executa `terraform init -backend=false -no-color`: instala os providers sem conectar ao backend. Registry/cache indisponível pode reprovar. |
 | 5 | Terraform Validate Lambda Customer Auth | Executa `terraform validate -no-color` com os schemas instalados; inconsistência de sintaxe, tipo ou referência reprova. |
-| 6 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 6 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. |
 | 7 | Build the package for the plan | Gera `app/dist` no próprio job, pois o archive_file do Terraform precisa dessa saída para o plan. |
 | 8 | Configure AWS Credentials | Configura access key, secret key e session token da mesma sessão AWS, em us-east-1. Este step tolera falha e conserva `aws_creds.outcome` para decidir entre plan e nota de skip. |
 | 9 | Terraform Plan Lambda Customer Auth | Só com `aws_creds.outcome == success`: executa init com backend (`-reconfigure` e `-backend-config="bucket=$TF_STATE_BUCKET"`) e plan. Qualquer erro desses comandos reprova o job. |
@@ -140,20 +138,17 @@ ancestrais e encontraria as dependências instaladas do projeto, transformando a
 asserção em teatro.
 
 O cliente do gerenciador de segredos é **embutido** no pacote — ver
-[ADR 0004](adr/0004-empacotamento-e-publicacao.md). O único módulo que permanece
-externo é o binário opcional do driver de banco, que o driver referencia atrás
-de um acessor preguiçoso que esta função nunca toca: ele não é resolvido durante
-o carregamento, e por isso a asserção passa.
+[ADR 0004](adr/0004-empacotamento-e-publicacao.md). Nenhum módulo permanece
+externo: o pacote carrega sozinho.
 
-### A imagem migradora vem de um commit fixado
+### O e2e roda contra stubs dos serviços
 
-`E2E Tests` obtém o código da API num identificador de commit declarado em
-`API_MIGRATOR_COMMIT`, no próprio workflow, e constrói a imagem localmente.
-
-É autocontido: funciona ainda que o pipeline daquele repositório nunca tenha
-executado. E fixar no workflow torna a atualização do contrato de schema um
-commit revisável, com diferença visível — o momento certo para revisar a
-compatibilidade.
+`E2E Tests` não depende de outro repositório nem de serviço no ar: o stub HTTP
+responde pelo Identity e pelo work-order com as fixtures que cada um publica,
+copiadas para `app/test/contracts/` — ver
+[Testes › Ponta a ponta](testing.md#ponta-a-ponta--npm-run-teste2e). Atualizar
+uma fixture é uma mudança revisável neste repositório, e o momento certo para
+revisar a compatibilidade com o dono da rota.
 
 ### A prévia de infraestrutura é opcional por projeto
 
@@ -179,7 +174,7 @@ terminando no Quality Gate](diagrams/sast-workflow.png)
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
-| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. |
 | 3 | Unit tests with coverage | Executa `npm run test:cov` e exige os limiares de cobertura do projeto. |
 | 4 | SonarQube Scan | Analisa `app/` com `SONAR_TOKEN`, consumindo o relatório de cobertura da mesma execução; aguarda o Quality Gate configurado. |
 
@@ -258,7 +253,7 @@ falha.
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
 | 2 | Validate required secrets | Quando `action != 'destroy'`, antes de chamadas à nuvem, verifica a chave de assinatura/PEM e a credencial Datadog quando coleta estiver ligada; ausência reprova com o nome do item. |
-| 3 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Não gera Prisma; o schema pertence à API. Executa tanto em `apply` quanto em `destroy`. |
+| 3 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm e `npm ci` em `app/`. Executa tanto em `apply` quanto em `destroy`. |
 | 4 | Build | Compila/empacota a aplicação em `app/dist` com o comando de build do projeto (necessário tanto em `apply` quanto em `destroy`, pois `data.archive_file` em `infra/` exige o diretório `app/dist`). |
 | 5 | hashicorp/setup-terraform | Instala/configura a CLI Terraform para os comandos seguintes. |
 | 6 | Configure AWS Credentials | Configura access key, secret key e session token da mesma sessão AWS, em us-east-1. |
@@ -278,41 +273,40 @@ falha.
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | Configure AWS Credentials | Configura access key, secret key e session token da mesma sessão AWS, em us-east-1. |
-| 2 | Post-deploy gate — real invocation | Invoca a função com evento de credencial inexistente e exige 401; verifica pacote, configuração, segredos e acesso ao banco. |
+| 2 | Post-deploy gate — real invocation | Invoca a função com o CPF sintético `529.982.247-25`, válido e inexistente, e exige 401; verifica pacote, configuração, segredo e o caminho até o Identity. |
 | 3 | Post-deploy gate — public route | Envia a mesma credencial à rota pública e exige 401; inclui permissão do Gateway para invocar a função. |
+| 4 | Post-deploy gate — seeded customer login | Faz o login do cliente semeado (`SEEDED_CUSTOMER_CPF` e `SEEDED_CUSTOMER_PASSWORD`) pela rota pública e exige 200; com o token, chama `GET /api/me/work-orders` e exige 200. O token e o corpo da resposta não são impressos. |
 
 O nome da função e o endereço público chegam pelas saídas do job de entrega —
 nada é digitado, e nada é recalculado.
 
-### Os dois portões pós-implantação
+### Os três portões pós-implantação
 
-Um provisionamento verde não é evidência de que a solução responde de fora.
-Ambos afirmam a mesma recusa de credencial, e qualquer um deles reprova a
-entrega.
+Um provisionamento verde não é evidência de que a solução responde de fora. Os
+três vivem no job `Post-Deploy Gates`, depois de a entrega concluir, e qualquer
+um deles reprova a entrega.
 
-**Portão 1 — invocação direta.** Prova, em cadeia: o pacote carrega, a
-configuração é válida, os dois segredos foram lidos, a chave de assinatura
-importou e a interface de rede alcança o banco.
+**Portão 1 — invocação direta.** Invoca a função com o CPF sintético
+`529.982.247-25`: válido pelos dígitos verificadores e ausente dos dados de
+exemplo (seeds) do Identity e do work-order. Prova, em cadeia: o pacote carrega,
+a configuração é válida, o segredo foi lido, a chave de assinatura importou e a
+função alcança o Identity pelo NLB (Network Load Balancer, o balanceador de rede
+interno do cluster Kubernetes).
 
 A discriminação vem de graça do tradutor de respostas que a função já tem:
 
 | Resposta | Significa |
 | --- | --- |
-| `401` | Banco alcançado, sem correspondência — **é o resultado esperado** |
-| `503` | A operação no banco falhou. O tradutor de respostas devolve `503` para **qualquer** falha de banco — rede, credencial ou schema —, porque a causa não vaza para o chamador. Ela está na linha `db.query.failed` do log da função |
+| `401` | O Identity respondeu e recusou a credencial — **é o resultado esperado** |
+| `503` | A chamada ao Identity falhou. O tradutor de respostas devolve `503` para **qualquer** falha de chamada interna — rede, tempo esgotado ou resposta fora do contrato —, porque a causa não vaza para o chamador. Ela está na linha `internal.call.failed` do log da função |
 | `500` | Configuração inválida ou falha de assinatura |
 | Ausência de resposta da aplicação | Pacote ou rede quebrados |
 
-Os dois vivem no job `Post-Deploy Gates`, depois de a entrega concluir.
-
-**Portão 2 — rota pública.** O único elo que a invocação direta **não** exercita
-é a autorização de invocação concedida ao API Gateway. Sem ela a rota responde erro de
+**Portão 2 — rota pública.** Envia o mesmo CPF a `POST /customer-auth/login` e
+exige `401`. O único elo que a invocação direta **não** exercita é a autorização
+de invocação concedida ao API Gateway. Sem ela a rota responde erro de
 integração com a função existindo e saudável — exatamente o estado que esta
 esteira existe para encerrar.
-
-Os gates exercitam a inicialização e a recusa de credencial. Um `401` não
-exercita a assinatura de um JWT novo nem comprova sua aceitação pela API;
-esse fluxo positivo exige um cliente de teste com vínculo ativo.
 
 O endereço vem do output do state remoto da stack do API Gateway, e não é digitado. A
 rota não declara autorizador próprio, então uma recusa de credencial ali só pode
@@ -320,6 +314,23 @@ ter vindo da função.
 
 Esse modo de falha **não se corrige revertendo**: a função está saudável, quem
 está errado é o recurso de autorização, e o conserto é para frente.
+
+**Portão 3 — login do cliente semeado.** Os dois primeiros só exercitam a recusa.
+Este faz o login de um cliente que existe no Identity e tem vínculo ativo no
+work-order, com o CPF e a senha guardados nos secrets `SEEDED_CUSTOMER_CPF` e
+`SEEDED_CUSTOMER_PASSWORD`, e exige `200`. Com o token recebido, chama
+`GET /api/me/work-orders` pela rota pública e exige `200`. Prova que o
+work-order devolve o vínculo e aceita o token que a função assina.
+
+| Desfecho | Significa |
+| --- | --- |
+| Login `401` | O usuário não está semeado no Identity, a senha do secret não confere com a do seed, ou falta o vínculo ativo dele no work-order |
+| Login `200` sem `data.accessToken` | Resposta fora do contrato de login |
+| `GET /api/me/work-orders` `401` ou `403` | O work-order recusou o token: a chave pública, o emissor ou a audiência não conferem com os da função |
+| Outro status | Falha do serviço chamado, nomeada no log do job |
+
+O token é mascarado no log do job, e nem ele nem o corpo da resposta são
+impressos.
 
 ### Rastreabilidade
 
@@ -363,10 +374,10 @@ environment e satisfaz as suas regras.
 | `AWS_ACCESS_KEY_ID` | Segredo | CI, CD | Autenticação na nuvem | CD: sim · CI: não (a prévia é pulada sem ele) |
 | `AWS_SECRET_ACCESS_KEY` | Segredo | CI, CD | Autenticação na nuvem | CD: sim · CI: não |
 | `AWS_SESSION_TOKEN` | Segredo | CI, CD | Autenticação na nuvem. **A omissão produz falha de token inválido em toda chamada** | CD: sim · CI: não |
-| `TF_STATE_BUCKET` | Variável | CI, CD | Nome do bucket de state, em variável para trocá-lo sem editar arquivo versionado: vai ao `terraform init` por `-backend-config` e às três `TF_VAR_*_state_bucket`; sem ela, o `init` falha | Sim |
+| `TF_STATE_BUCKET` | Variável | CI, CD | Nome do bucket de state, em variável para trocá-lo sem editar arquivo versionado: vai ao `terraform init` por `-backend-config` e às três `TF_VAR_*_state_bucket` (`aws_base`, `k8s` e `gateway`); sem ela, o `init` falha | Sim |
 | `BOT_APP_ID` | Variável | CI | Identidade da aplicação que abre o Pull Request | Sim |
 | `BOT_PRIVATE_KEY` | Segredo | CI | Credencial da mesma aplicação | Sim |
-| `DD_API_KEY` | Segredo | CD | Credencial do destino de telemetria. É a **mesma** que a API usa — por isso vive na organização, e não neste repositório | Somente quando a coleta está ligada |
+| `DD_API_KEY` | Segredo | CD | Credencial do destino de telemetria. É a **mesma** que os serviços usam — por isso vive na organização, e não neste repositório | Somente quando a coleta está ligada |
 
 As três credenciais da nuvem expiram a cada reinício do laboratório e precisam
 ser renovadas **juntas**.
@@ -378,6 +389,13 @@ ser renovadas **juntas**.
 | `SONAR_TOKEN` | Segredo | SAST | Autenticação no serviço de análise estática | Sim |
 | `ENABLE_DEPLOY` | Variável | CD | Interruptor de entrega. Ausente ou diferente de `true`, o merge não provoca provisionamento. **Precisa ser de repositório**: a condição está no `if` do job, avaliado antes de o environment ser aplicado | Não (equivale a desligado) |
 | `ENABLE_TELEMETRY_COLLECTION` | Variável | CD | Interruptor da camada de coleta | Não (equivale a desligado) |
+| `SEEDED_CUSTOMER_CPF` | Segredo | CD | CPF do cliente semeado no Identity com vínculo ativo no work-order (`12345678909`), usado pelo portão 3 | Sim, para o portão 3 |
+| `SEEDED_CUSTOMER_PASSWORD` | Segredo | CD | Senha do seed do Identity para esse cliente | Sim, para o portão 3 |
+
+Os dois `SEEDED_CUSTOMER_*` ficam no repositório, e não no environment, porque
+são a credencial de um cliente de exemplo criado pelo seed, cujo valor já está
+no código do Identity: guardá-los como secret só evita que apareçam no log do
+job.
 
 ### Escopo de environment `production`
 
@@ -390,7 +408,7 @@ sensível da solução — por isso vive no environment, onde nenhum workflow de
 branch o alcança.
 
 A credencial do destino de telemetria fica de fora dessa regra por um motivo
-concreto: ela é a **mesma** que a API usa, já existe no escopo da organização, e
+concreto: ela é a **mesma** que os serviços usam, já existe no escopo da organização, e
 uma cópia no environment não reduziria o alcance que ela já tem — apenas
 criaria um segundo lugar para expirar.
 
@@ -412,6 +430,9 @@ criaria um segundo lugar para expirar.
    definir retenção de grupo de log e acessar o backend do state.
 6. Confirmar que a cota de execuções concorrentes da conta comporta a reserva
    pretendida, deixando ao menos cem execuções não reservadas.
+7. Cadastrar `SEEDED_CUSTOMER_CPF` e `SEEDED_CUSTOMER_PASSWORD` como secrets do
+   repositório, com o CPF e a senha do cliente semeado no Identity. Sem eles, o
+   portão 3 reprova indicando os dois nomes.
 
 ### Exposição aceita conscientemente
 
@@ -502,14 +523,13 @@ e voltaria a depender da mesma gravação.
 | Ampliar os prefixos de branch que disparam a validação | Transformaria o portão de nomenclatura de branch em convenção não verificada |
 | Gatilho por evento de Pull Request na validação | Duplicaria toda execução |
 | Verificação de tipos como passo dentro da construção | Economizaria uma instalação de dependências, ao custo de enfileirar a verificação mais provável de reprovar atrás de uma construção que passaria de qualquer forma |
-| Consumir a imagem migradora publicada pelo pipeline da API | Inverteria a dependência: passaria a exigir que aquele pipeline tivesse executado, e o dono do bloqueio deixaria de ser quem consegue resolvê-lo |
-| Acompanhar a branch principal da API em vez de um commit fixado | A atualização do schema deixaria de ser revisada, e uma mudança alheia tornaria esta validação vermelha sem commit local |
-| Validar migrations nesta esteira | Este repositório não tem definição de schema. Validaria artefato de outro dono |
+| E2E contra o Identity e o work-order reais, clonados e construídos na esteira | Exigiria construir e subir dois serviços com os seus bancos a cada `push`, e uma mudança alheia tornaria esta validação vermelha sem commit local; as fixtures publicadas pelos donos fixam o contrato, e o portão 3 prova contra os serviços reais |
 | A validação produz o `.zip` e a entrega o consome como artefato | Exigiria acoplamento entre workflows por evento de execução ou download por identificador |
 | Envio do pacote via armazenamento de objetos | Necessário apenas acima do limite de envio direto, que este pacote não alcança |
 | Apelido de versão da função | Exigiria mudar `locals.tf` do repositório do gateway e qualificar a autorização de invocação — uma mudança entre repositórios para obter uma reversão que reverter o commit já entrega |
 | Só a invocação direta como verificação, com a rota pública em procedimento manual | Manteria sem dono o único elo que esta entrega existe para fechar |
 | Só a chamada à rota pública | Perderia a discriminação entre `401`, `503`, `500` e ausência de resposta que a invocação direta entrega de graça |
+| Manter o CPF sintético `123.456.789-09` nos portões 1 e 2 | É o CPF do João, cliente semeado no Identity: o portão viraria uma senha errada de um usuário real, sem provar o caminho de "CPF inexistente", e registraria uma recusa para ele a cada entrega |
 | Remover a prévia de infraestrutura da validação | Eliminaria a exposição da credencial e moveria a revisão da diferença para depois da integração, onde ninguém a lê |
 | Prévia sob aprovação em environment próprio | Resolveria a exposição, ao custo de uma cerimônia por pedido de merge e de divergência com os outros quatro repositórios |
 | Análise dinâmica de segurança | [ADR 0006](adr/0006-sem-analise-dinamica.md) |

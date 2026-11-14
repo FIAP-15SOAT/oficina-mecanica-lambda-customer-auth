@@ -2,7 +2,11 @@
 
 ## Status
 
-Aceito — 2026-09-08
+Emendado pelo [ADR 0008](0008-contexto-de-trace-sem-sdk.md) — 2026-11-14
+
+Aceito em 2026-09-08. A coleta continua sem instrumentação no código; a função
+passou a gerar e propagar o contexto de trace, e as linhas de log levam
+`trace_id`.
 
 ## Contexto
 
@@ -88,6 +92,7 @@ necessários com overhead medido e custo de ingestão antes de adotar um SDK.
 
 - [Observabilidade](../observability.md)
 - [Logging](../logging.md)
+- [ADR 0008](0008-contexto-de-trace-sem-sdk.md) — a decisão que emenda esta
 - [Infraestrutura › Variáveis de ambiente da função](../terraform.md#variáveis-de-ambiente-da-função)
 - ADR de telemetria da API (`docs/adr/0005-opentelemetry.md`, em
   `oficina-mecanica-work-order-service`) — o critério de que a lacuna dominante é coleta
