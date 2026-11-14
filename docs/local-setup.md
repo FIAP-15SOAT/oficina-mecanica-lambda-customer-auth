@@ -92,12 +92,12 @@ Para depurar, `NODE_OPTIONS=--inspect npm run invoke` e anexe o depurador.
 ## Com o Identity e o work-order locais
 
 Roteiro do zero para subir os dois serviços e a função e usar o token emitido
-nas rotas do cliente no work-order.
+nas rotas do cliente no Identity e no work-order.
 
 ### 1. Gerar o par de chaves
 
-A função assina com a chave **privada**; o work-order verifica com a
-**pública**. As duas metades precisam ser do mesmo par — não há descoberta de
+A função assina com a chave **privada**; o Identity e o work-order verificam
+com a **pública**. As duas metades precisam ser do mesmo par — não há descoberta de
 chave entre os repositórios, e nenhuma chave é versionada em nenhum deles.
 
 ```bash
@@ -119,6 +119,27 @@ node -e "console.log(JSON.stringify(require('node:fs').readFileSync('customer-au
 ```bash
 git clone https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service.git
 cd oficina-mecanica-identity-service/app
+cp .env.example .env
+```
+
+O Identity não sobe sem quatro chaves no `app/.env`: a **metade pública** do
+passo 1, que valida o token de cliente, e os dois pares do token de
+funcionário, que ele mesmo assina (access e refresh). Os comandos abaixo geram
+os pares de funcionário, gravam as quatro chaves e apagam os arquivos de
+funcionário, que o work-order não usa:
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out staff-access.pem
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out staff-refresh.pem
+openssl pkey -in staff-access.pem -pubout -out staff-access.pub.pem
+node -e "
+const read = (file) => JSON.stringify(require('node:fs').readFileSync(file, 'utf8').replace(/\r/g, ''));
+console.log('STAFF_JWT_PUBLIC_KEY=' + read('staff-access.pub.pem'));
+console.log('STAFF_JWT_PRIVATE_KEY=' + read('staff-access.pem'));
+console.log('STAFF_JWT_REFRESH_PRIVATE_KEY=' + read('staff-refresh.pem'));
+console.log('CUSTOMER_JWT_PUBLIC_KEY=' + read('../../customer-auth-public.pem'));
+" >> .env
+rm staff-access.pem staff-access.pub.pem staff-refresh.pem
 docker compose up -d --build --wait
 ```
 
@@ -138,11 +159,19 @@ cd oficina-mecanica-work-order-service/app
 cp .env.example .env
 ```
 
-Em `app/.env`, a **metade pública** — as demais variáveis já têm padrão no
-Compose:
+Em `app/.env`, troque o valor de `CUSTOMER_JWT_PUBLIC_KEY` pela **metade
+pública** do passo 1:
 
 ```env
 CUSTOMER_JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"
+```
+
+O work-order também valida o token de funcionário, assinado pelo Identity:
+copie para o `.env` a chave pública de funcionário que o passo 2 gravou no
+Identity. As demais variáveis já têm padrão no Compose.
+
+```bash
+grep '^STAFF_JWT_PUBLIC_KEY=' ../../oficina-mecanica-identity-service/app/.env >> .env
 ```
 
 O `docker-compose.yml` do work-order traz `${CUSTOMER_JWT_PUBLIC_KEY:-...}` com
@@ -190,13 +219,18 @@ npm run invoke
 A resposta é o envelope de [Contrato](contracts.md#resposta-de-sucesso), com
 `data.accessToken`.
 
-### 6. Chamar o work-order com o token emitido
+### 6. Chamar o Identity e o work-order com o token emitido
 
 ```bash
 TOKEN="<data.accessToken>"
-curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/me
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3001/api/me
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/me/work-orders
 ```
+
+`GET /api/me` é do Identity: devolve o perfil do usuário e, em `customers`, só
+as empresas que ele representa — para o João, que só tem o próprio cadastro de
+pessoa física, a lista vem vazia. `GET /api/me/work-orders` é do work-order e
+lista as ordens de serviço dos clientes vinculados.
 
 As rotas `/api/me/*` são a superfície do fluxo externo. As internas
 (`/api/work-orders`, `/api/customers`, …) **não** aceitam este token: exigem o
