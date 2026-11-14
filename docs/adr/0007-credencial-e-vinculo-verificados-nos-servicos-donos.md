@@ -106,4 +106,4 @@ cujo token o work-order precisa aceitar.
 - [Contrato › Chamadas internas](../contracts.md#chamadas-internas)
 - [Arquitetura › Gateways e o cliente HTTP interno](../architecture.md#gateways-e-o-cliente-http-interno)
 - [Testes › Ponta a ponta](../testing.md#ponta-a-ponta--npm-run-teste2e)
-- [CI/CD › Os três portões pós-implantação](../ci-cd.md#os-três-portões-pós-implantação)
+- [CI/CD › Os três quality gates pós-implantação](../ci-cd.md#os-três-quality-gates-pós-implantação)

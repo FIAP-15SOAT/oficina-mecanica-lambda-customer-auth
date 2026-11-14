@@ -39,7 +39,7 @@ Quatro razões independentes — cada uma bastaria:
 
 No repositório do API Gateway, que é dono da superfície pública real.
 
-E lá, como **execução manual contra ambiente descartável** — nunca como portão de
+E lá, como **execução manual contra ambiente descartável** — nunca como quality gate de
 Pull Request, pelo motivo que aquele repositório já registrou: exigiria o
 laboratório ligado e escanearia ativamente um ambiente compartilhado.
 

@@ -9,7 +9,7 @@ análise estática e entrega.
 | Workflow | Arquivo | Dispara em | Termina em |
 | --- | --- | --- | --- |
 | CI | `.github/workflows/ci.yml` | `push` em `feature/**` e `fix/**` | Pull Request aberto para `main` |
-| SAST | `.github/workflows/sast.yml` | Pull Request para `main` e `push` em `main` | Portão de qualidade da análise estática |
+| SAST | `.github/workflows/sast.yml` | Pull Request para `main` e `push` em `main` | Quality gate da análise estática |
 | CD | `.github/workflows/cd.yml` | `push` em `main` e execução manual (`action`: `apply` padrão ou `destroy`) | Rota pública respondendo pela função e token aceito pelo work-order, em dois jobs (`Deploy Lambda` e `Post-Deploy Gates`), ou destruição da infraestrutura da função quando `action=destroy` |
 
 ![CI Workflow: os seis jobs de validação — Lint, Type Check, Unit Tests, E2E
@@ -31,7 +31,7 @@ branch cancela a execução anterior.
 
 Uma branch fora de `feature/**` e `fix/**` não produz execução do CI.
 O SAST ainda pode executar em um Pull Request para `main`.
-Combinada com as verificações obrigatórias da `main`, essa ausência **é o portão
+Combinada com as verificações obrigatórias da `main`, essa ausência **é o quality gate
 de nomenclatura de branch**: o Pull Request fica em "aguardando reporte" até a
 branch ser renomeada. É intencional, e não se corrige afrouxando o gatilho.
 
@@ -196,20 +196,20 @@ consome de `coverage/lcov.info`. Relatório versionado ou de execução anterior
 reportaria número fabricado.
 
 `sonar.qualitygate.wait=true` vive em `app/sonar-project.properties`: o passo
-aguarda o portão e reprova quando ele reprova.
+aguarda o quality gate e reprova quando ele reprova.
 
 **Não há análise dinâmica neste repositório**, por decisão registrada no
 [ADR 0006](adr/0006-sem-analise-dinamica.md).
 
 ## Entrega contínua
 
-![CD Workflow: gatilho em push na main ou workflow_dispatch, portão de entrada
+![CD Workflow: gatilho em push na main ou workflow_dispatch, quality gate de entrada
 por branch e interruptor, e os jobs Deploy Lambda (14 steps) e Post-Deploy Gates
-(4 steps: credenciais AWS e os três portões — invocação direta e rota pública
+(4 steps: credenciais AWS e os três quality gates — invocação direta e rota pública
 com CPF inexistente, que exigem 401, e login do cliente semeado, que exige 200
 e o token aceito pelo work-order), ligados por needs: deploy](diagrams/cd-workflow.png)
 
-### Portões de entrada
+### Quality gates de entrada
 
 Duas condições de entrada e o escopo do job:
 
@@ -239,14 +239,14 @@ A entrega e a verificação vivem em **jobs separados**, encadeados por `needs`.
 
 | Job | O que faz | Quando executa |
 | --- | --- | --- |
-| `Deploy Lambda` | Publica a função (`apply` padrão) ou destrói a infraestrutura da função (`action=destroy`) | Passados os três portões de entrada |
+| `Deploy Lambda` | Publica a função (`apply` padrão) ou destrói a infraestrutura da função (`action=destroy`) | Passados os três quality gates de entrada |
 | `Post-Deploy Gates` | Prova que o que foi publicado atende | Só se a entrega concluir com sucesso e `action != 'destroy'` |
 
-A separação é de leitura, e ela importa: quando um portão reprova, a função
+A separação é de leitura, e ela importa: quando um quality gate reprova, a função
 **foi** publicada — o que falhou foi a verificação. Com tudo no mesmo job, um
 `Deploy Lambda` vermelho sugeriria que o provisionamento não aconteceu, e a
 reação instintiva seria reverter. É o oposto do certo: os modos de falha que os
-portões pegam se consertam **para frente**.
+quality gates pegam se consertam **para frente**.
 
 `needs` sozinho já é a condição do segundo job — ele é pulado junto com o
 primeiro quando o interruptor está desligado, e não executa quando a entrega
@@ -285,13 +285,13 @@ falha.
 O nome da função e o endereço público chegam pelas saídas do job de entrega —
 nada é digitado, e nada é recalculado.
 
-### Os três portões pós-implantação
+### Os três quality gates pós-implantação
 
 Um provisionamento verde não é evidência de que a solução responde de fora. Os
 três vivem no job `Post-Deploy Gates`, depois de a entrega concluir, e qualquer
 um deles reprova a entrega.
 
-**Portão 1 — invocação direta.** Invoca a função com o CPF sintético
+**Quality gate 1 — invocação direta.** Invoca a função com o CPF sintético
 `529.982.247-25`: válido pelos dígitos verificadores e ausente dos dados de
 exemplo (seeds) do Identity e do work-order. Prova, em cadeia: o pacote carrega,
 a configuração é válida, o segredo foi lido, a chave de assinatura importou e a
@@ -307,7 +307,7 @@ A discriminação vem de graça do tradutor de respostas que a função já tem:
 | `500` | Configuração inválida ou falha de assinatura |
 | Ausência de resposta da aplicação | Pacote ou rede quebrados |
 
-**Portão 2 — rota pública.** Envia o mesmo CPF a `POST /customer-auth/login` e
+**Quality gate 2 — rota pública.** Envia o mesmo CPF a `POST /customer-auth/login` e
 exige `401`. O único elo que a invocação direta **não** exercita é a autorização
 de invocação concedida ao API Gateway. Sem ela a rota responde erro de
 integração com a função existindo e saudável — exatamente o estado que esta
@@ -320,7 +320,7 @@ ter vindo da função.
 Esse modo de falha **não se corrige revertendo**: a função está saudável, quem
 está errado é o recurso de autorização, e o conserto é para frente.
 
-**Portão 3 — login do cliente semeado.** Os dois primeiros só exercitam a recusa.
+**Quality gate 3 — login do cliente semeado.** Os dois primeiros só exercitam a recusa.
 Este faz o login de um cliente que existe no Identity e tem vínculo ativo no
 work-order, com o CPF e a senha guardados nos secrets `SEEDED_CUSTOMER_CPF` e
 `SEEDED_CUSTOMER_PASSWORD`, e exige `200`. Com o token recebido, chama
@@ -394,8 +394,8 @@ ser renovadas **juntas**.
 | `SONAR_TOKEN` | Segredo | SAST | Autenticação no serviço de análise estática | Sim |
 | `ENABLE_DEPLOY` | Variável | CD | Interruptor de entrega. Ausente ou diferente de `true`, o merge não provoca provisionamento. **Precisa ser de repositório**: a condição está no `if` do job, avaliado antes de o environment ser aplicado | Não (equivale a desligado) |
 | `ENABLE_TELEMETRY_COLLECTION` | Variável | CD | Interruptor da camada de coleta | Não (equivale a desligado) |
-| `SEEDED_CUSTOMER_CPF` | Segredo | CD | CPF do cliente semeado no Identity com vínculo ativo no work-order (`12345678909`), usado pelo portão 3 | Sim, para o portão 3 |
-| `SEEDED_CUSTOMER_PASSWORD` | Segredo | CD | Senha do seed do Identity para esse cliente | Sim, para o portão 3 |
+| `SEEDED_CUSTOMER_CPF` | Segredo | CD | CPF do cliente semeado no Identity com vínculo ativo no work-order (`12345678909`), usado pelo quality gate 3 | Sim, para o quality gate 3 |
+| `SEEDED_CUSTOMER_PASSWORD` | Segredo | CD | Senha do seed do Identity para esse cliente | Sim, para o quality gate 3 |
 
 Os dois `SEEDED_CUSTOMER_*` ficam no repositório, e não no environment, porque
 são a credencial de um cliente de exemplo criado pelo seed, cujo valor já está
@@ -437,7 +437,7 @@ criaria um segundo lugar para expirar.
    pretendida, deixando ao menos cem execuções não reservadas.
 7. Cadastrar `SEEDED_CUSTOMER_CPF` e `SEEDED_CUSTOMER_PASSWORD` como secrets do
    repositório, com o CPF e a senha do cliente semeado no Identity. Sem eles, o
-   portão 3 reprova indicando os dois nomes.
+   quality gate 3 reprova indicando os dois nomes.
 
 ### Exposição aceita conscientemente
 
@@ -525,16 +525,16 @@ e voltaria a depender da mesma gravação.
 | Alternativa | Por que não |
 | --- | --- |
 | Federação por identidade do provedor de código | Exigiria criar um provedor de identidade **e** uma role. O laboratório não permite criar roles. Não é preferência, é impossibilidade |
-| Ampliar os prefixos de branch que disparam a validação | Transformaria o portão de nomenclatura de branch em convenção não verificada |
+| Ampliar os prefixos de branch que disparam a validação | Transformaria o quality gate de nomenclatura de branch em convenção não verificada |
 | Gatilho por evento de Pull Request na validação | Duplicaria toda execução |
 | Verificação de tipos como passo dentro da construção | Economizaria uma instalação de dependências, ao custo de enfileirar a verificação mais provável de reprovar atrás de uma construção que passaria de qualquer forma |
-| E2E contra o Identity e o work-order reais, clonados e construídos na esteira | Exigiria construir e subir dois serviços com os seus bancos a cada `push`, e uma mudança alheia tornaria esta validação vermelha sem commit local; as fixtures publicadas pelos donos fixam o contrato, e o portão 3 prova contra os serviços reais |
+| E2E contra o Identity e o work-order reais, clonados e construídos na esteira | Exigiria construir e subir dois serviços com os seus bancos a cada `push`, e uma mudança alheia tornaria esta validação vermelha sem commit local; as fixtures publicadas pelos donos fixam o contrato, e o quality gate 3 prova contra os serviços reais |
 | A validação produz o `.zip` e a entrega o consome como artefato | Exigiria acoplamento entre workflows por evento de execução ou download por identificador |
 | Envio do pacote via armazenamento de objetos | Necessário apenas acima do limite de envio direto, que este pacote não alcança |
 | Apelido de versão da função | Exigiria mudar `locals.tf` do repositório do gateway e qualificar a autorização de invocação — uma mudança entre repositórios para obter uma reversão que reverter o commit já entrega |
 | Só a invocação direta como verificação, com a rota pública em procedimento manual | Manteria sem dono o único elo que esta entrega existe para fechar |
 | Só a chamada à rota pública | Perderia a discriminação entre `401`, `503`, `500` e ausência de resposta que a invocação direta entrega de graça |
-| Manter o CPF sintético `123.456.789-09` nos portões 1 e 2 | É o CPF do João, cliente semeado no Identity: o portão viraria uma senha errada de um usuário real, sem provar o caminho de "CPF inexistente", e registraria uma recusa para ele a cada entrega |
+| Manter o CPF sintético `123.456.789-09` nos quality gates 1 e 2 | É o CPF do João, cliente semeado no Identity: o quality gate viraria uma senha errada de um usuário real, sem provar o caminho de "CPF inexistente", e registraria uma recusa para ele a cada entrega |
 | Remover a prévia de infraestrutura da validação | Eliminaria a exposição da credencial e moveria a revisão da diferença para depois da integração, onde ninguém a lê |
 | Prévia sob aprovação em environment próprio | Resolveria a exposição, ao custo de uma cerimônia por pedido de merge e de divergência com os outros quatro repositórios |
 | Análise dinâmica de segurança | [ADR 0006](adr/0006-sem-analise-dinamica.md) |

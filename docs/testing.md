@@ -36,7 +36,7 @@ demora maior que o tempo limite — e o stub guarda as requisições recebidas, 
 os cabeçalhos, para as asserções de correlação.
 
 Não há Docker nem banco: o nível roda em processo. Que o pacote publicado sobe
-no ambiente de execução oficial e alcança os serviços reais é o que os portões
+no ambiente de execução oficial e alcança os serviços reais é o que os quality gates
 pós-implantação provam, mais abaixo.
 
 ### As fixtures dos serviços
@@ -79,15 +79,15 @@ O job `E2E Tests` roda `npm run test:e2e` sem nenhum preparo além da instalaç�
 das dependências: não clona outro repositório, não constrói imagem e não sobe
 contêiner.
 
-## Os portões pós-implantação — o teste do artefato implantado
+## Os quality gates pós-implantação — o teste do artefato implantado
 
 Os dois níveis acima exercitam o código. Nenhum deles prova que o **pacote
 publicado** sobe, alcança os serviços reais e emite um token que o work-order
 aceita.
 
-Isso é o que os três portões pós-implantação da entrega fazem:
+Isso é o que os três quality gates pós-implantação da entrega fazem:
 
-| Portão | O que prova |
+| Quality gate | O que prova |
 | --- | --- |
 | Invocação direta da função publicada, com um CPF válido e inexistente → `401` | O pacote carrega, a configuração é válida, o segredo foi lido, a chave de assinatura importou e a função alcança o Identity pelo NLB interno |
 | Rota pública com o mesmo CPF → `401` | A autorização de invocação concedida ao API Gateway existe e aponta para a API certa |
@@ -95,7 +95,7 @@ Isso é o que os três portões pós-implantação da entrega fazem:
 
 Qualquer um dos três reprova a entrega. A discriminação entre `401`, `503`,
 `500` e ausência de resposta vem do tradutor de respostas — ver
-[CI/CD](ci-cd.md#os-três-portões-pós-implantação).
+[CI/CD](ci-cd.md#os-três-quality-gates-pós-implantação).
 
 ## Propriedades travadas por teste
 
@@ -139,7 +139,7 @@ validador de evento e tradutor de resposta **não** são excluídos: todos cont�
 ramificação e falham de formas visíveis ao cliente.
 
 A mesma lista aparece em `sonar-project.properties`, para que a métrica local e
-a do portão descrevam o mesmo conjunto de arquivos.
+a do quality gate descrevam o mesmo conjunto de arquivos.
 
 ## Material de teste
 
