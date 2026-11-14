@@ -10,6 +10,7 @@
   "scripts": {
     "build": "tsx scripts/build.ts",
     "invoke": "tsx --env-file-if-exists=.env scripts/invoke.ts",
+    "stub": "tsx scripts/stub-services.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "npm run lint -- --fix",
@@ -28,7 +29,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
-    "@testcontainers/postgresql": "^11.14.0",
     "@types/aws-lambda": "^8.10.158",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
@@ -39,7 +39,6 @@
     "globals": "^17.0.0",
     "jest": "^30.0.0",
     "prettier": "^3.4.2",
-    "testcontainers": "^11.14.0",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
