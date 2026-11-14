@@ -2,11 +2,9 @@ import {
   buildInvocationLogLine,
   DURATION_ATTRIBUTE,
   INVOCATION_LOG_MESSAGE,
-  PASSWORD_DURATION_ATTRIBUTE,
-  QUERY_DURATION_ATTRIBUTE,
   resolveInvocationLogLevel,
 } from '@infrastructure/logging/invocation-log.builder';
-import { DatabaseOperationException } from '@infrastructure/exceptions/database-operation.exception';
+import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 
 const BASE = { method: 'POST', statusCode: 200, durationMs: 412.5 };
 
@@ -30,23 +28,10 @@ describe('buildInvocationLogLine', () => {
     expect(buildInvocationLogLine(BASE).message).toBe('http request');
   });
 
-  it('should carry the three durations in fields of their own', () => {
-    const { record } = buildInvocationLogLine({
-      ...BASE,
-      queryDurationMs: 12.5,
-      passwordVerificationDurationMs: 271.25,
-    });
-
-    expect(record[DURATION_ATTRIBUTE]).toBe(412.5);
-    expect(record[QUERY_DURATION_ATTRIBUTE]).toBe(12.5);
-    expect(record[PASSWORD_DURATION_ATTRIBUTE]).toBe(271.25);
-  });
-
-  it('should omit a phase that did not run', () => {
+  it('should carry the total duration in a field of its own', () => {
     const { record } = buildInvocationLogLine(BASE);
 
-    expect(record).not.toHaveProperty([QUERY_DURATION_ATTRIBUTE]);
-    expect(record).not.toHaveProperty([PASSWORD_DURATION_ATTRIBUTE]);
+    expect(record[DURATION_ATTRIBUTE]).toBe(412.5);
   });
 
   it('should describe the request and the response status', () => {
@@ -73,13 +58,18 @@ describe('buildInvocationLogLine', () => {
     const { record } = buildInvocationLogLine({
       ...BASE,
       statusCode: 503,
-      error: new DatabaseOperationException('busca', { cause: new Error('timeout') }),
+      error: new ServiceIntegrationException('POST /internal/customer-authentications', undefined, {
+        cause: new Error('timeout'),
+      }),
     });
 
-    expect(record['error.type']).toBe('DatabaseOperationException');
-    expect(record['exception.message']).toBe('Erro na operação busca');
-    // A causa do driver entra pela cadeia, não pela mensagem: é o que distingue
-    // estouro de tempo de DNS, autenticação ou TLS num mesmo 503.
+    expect(record['error.type']).toBe('ServiceIntegrationException');
+
+    expect(record['exception.message']).toBe(
+      'Falha na chamada interna POST /internal/customer-authentications',
+    );
+
+    // The client error comes through the cause chain: it tells a timeout from a refused connection in the same 503.
     expect(String(record['exception.stacktrace'])).toContain('Caused by:');
     expect(String(record['exception.stacktrace'])).toContain('timeout');
   });

@@ -6,11 +6,9 @@ import tseslint from 'typescript-eslint';
 
 const INFRASTRUCTURE_LIBRARIES = [
   'aws-lambda',
-  'pg',
-  'pg-*',
+  'axios',
   'jose',
   'jose/*',
-  'bcryptjs',
   'pino',
   'pino/*',
   '@aws-sdk/*',
@@ -113,7 +111,7 @@ export default tseslint.config(
             {
               group: [...INFRASTRUCTURE_LIBRARIES, '@infrastructure/*', '@interface-adapters/*'],
               message:
-                'Camada interna (domain/application) deve ser livre de infraestrutura: não importe aws-lambda, pg, jose, bcryptjs, pino, @aws-sdk/* nem módulos de @infrastructure/@interface-adapters.',
+                'Camada interna (domain/application) deve ser livre de infraestrutura: não importe aws-lambda, axios, jose, pino, @aws-sdk/* nem módulos de @infrastructure/@interface-adapters.',
             },
           ],
         },

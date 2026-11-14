@@ -3,7 +3,7 @@ import { LogEventDefinition } from '@application/logging/log-event';
 import { BadRequestException } from '@application/exceptions/bad-request.exception';
 import { UnauthorizedAccessException } from '@application/exceptions/unauthorized-access.exception';
 import { DomainValidationException } from '@domain/exceptions/domain-validation.exception';
-import { DatabaseOperationException } from '@infrastructure/exceptions/database-operation.exception';
+import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 import { TokenSigningException } from '@infrastructure/exceptions/token-signing.exception';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 import { CustomerAuthDataResponse } from '@interface-adapters/auth/responses/customer-auth.response';
@@ -65,11 +65,11 @@ const ERROR_MAPPINGS: readonly {
     message: () => INVALID_CREDENTIALS_MESSAGE,
   },
   {
-    matches: (error) => error instanceof DatabaseOperationException,
+    matches: (error) => error instanceof ServiceIntegrationException,
     statusCode: 503,
     error: 'Service Unavailable',
     message: () => SERVICE_UNAVAILABLE_MESSAGE,
-    event: TECHNICAL_EVENTS.DATABASE_QUERY_FAILED,
+    event: TECHNICAL_EVENTS.INTERNAL_CALL_FAILED,
   },
   {
     matches: (error) => error instanceof TokenSigningException,

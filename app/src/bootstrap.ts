@@ -1,9 +1,11 @@
-import { Pool } from 'pg';
-
 import { ILogger } from '@application/ports/output/logger.service.interface';
 import { AuthenticateCustomerUseCase } from '@application/use-cases/auth/authenticate-customer.use-case';
 import { CustomerAuthController } from '@interface-adapters/auth/customer-auth.controller';
 
+import {
+  InternalCallContext,
+  InternalHttpClient,
+} from '@infrastructure/clients/internal-http-client';
 import { createSecretResolver } from '@infrastructure/config/secret-resolver';
 import { loadEnvironment } from '@infrastructure/config/environment';
 import { ConfigurationException } from '@infrastructure/exceptions/configuration.exception';
@@ -12,17 +14,13 @@ import { createDefaultDestination } from '@infrastructure/logging/logging-destin
 import { createLogger } from '@infrastructure/logging/logger.factory';
 import { resolveLoggerConfig } from '@infrastructure/logging/logger.config';
 import { PinoLoggerAdapter } from '@infrastructure/logging/pino-logger.adapter';
+import { HttpIdentityCustomerCredentialsGateway } from '@infrastructure/gateways/identity/http-identity-customer-credentials-gateway';
+import { HttpWorkOrderUserCustomersGateway } from '@infrastructure/gateways/work-order/http-work-order-user-customers-gateway';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
-import { InvocationTimings } from '@infrastructure/observability/invocation-timings';
-import { createPool, parseDatabaseCredentials } from '@infrastructure/persistence/pg/connection';
-import { PgCustomerIdentityRepository } from '@infrastructure/persistence/pg/customer-identity.repository';
-import { BcryptHashService } from '@infrastructure/security/bcrypt-hash.service';
 import { JoseTokenIssuerService } from '@infrastructure/security/jose-token-issuer.service';
 
 export interface Dependencies {
-  timings: InvocationTimings;
-  pool: Pool;
-  createController(logger: ILogger): CustomerAuthController;
+  createController(logger: ILogger, callContext: InternalCallContext): CustomerAuthController;
 }
 
 let cached: Promise<Dependencies> | undefined;
@@ -53,36 +51,6 @@ export function getDependencies(): Promise<Dependencies> {
   return cached;
 }
 
-/**
- * Encerra o pool **se ele chegou a existir**, lendo a composição memoizada sem
- * dispará-la. Existe para o script local e para o teste, não para o runtime: na
- * plataforma o ambiente é congelado, e encerrar destruiria o reaproveitamento.
- *
- * Ler `cached` em vez de chamar `getDependencies()` é o ponto: uma composição
- * que falhou não é memoizada, então chamá-la aqui recomporia tudo e registraria
- * a mesma falha uma segunda vez.
- */
-export async function closeDependencies(): Promise<void> {
-  await cached?.then(
-    (dependencies) => dependencies.pool.end(),
-    () => undefined,
-  );
-}
-
-/**
- * Descarta a composição memoizada para que a invocação seguinte releia o
- * segredo do banco.
- *
- * A composição vive pelo ambiente de execução e a credencial é lida **uma única
- * vez**, na inicialização. Sem este descarte, uma troca de credencial a montante
- * deixaria todo ambiente já aquecido inutilizável até ser reciclado pela
- * plataforma — e a adoção futura de credencial gerenciada, com troca periódica
- * automática, exigiria mudança no código desta função.
- */
-export function discardComposition(): void {
-  cached = undefined;
-}
-
 /** Descarta a composição memoizada. Existe para o teste, não para o runtime. */
 export function resetDependencies(): void {
   cached = undefined;
@@ -93,7 +61,7 @@ async function build(): Promise<Dependencies> {
   const logger = getBaseLogger();
 
   try {
-    return await compose(logger);
+    return await compose();
   } catch (error) {
     logger.event(resolveInitializationEvent(error), {}, error);
 
@@ -107,26 +75,13 @@ function resolveInitializationEvent(error: unknown) {
     : TECHNICAL_EVENTS.INITIALIZATION_FAILED;
 }
 
-async function compose(logger: PinoLoggerAdapter): Promise<Dependencies> {
+async function compose(): Promise<Dependencies> {
   const environment = loadEnvironment();
-  const secrets = createSecretResolver();
 
-  const [databaseSecret, privateKeyPem] = await Promise.all([
-    secrets.resolve({
-      secretId: environment.DATABASE_SECRET_ID,
-      fallback: environment.DATABASE_SECRET,
-    }),
-    secrets.resolve({
-      secretId: environment.CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID,
-      fallback: environment.CUSTOMER_JWT_PRIVATE_KEY,
-    }),
-  ]);
-
-  const timings = new InvocationTimings();
-
-  const pool = createPool(environment, parseDatabaseCredentials(databaseSecret), (error) =>
-    logger.error('idle database client failed', error),
-  );
+  const privateKeyPem = await createSecretResolver().resolve({
+    secretId: environment.CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID,
+    fallback: environment.CUSTOMER_JWT_PRIVATE_KEY,
+  });
 
   const tokenIssuer = await JoseTokenIssuerService.create(privateKeyPem, {
     issuer: environment.CUSTOMER_JWT_ISSUER,
@@ -135,20 +90,25 @@ async function compose(logger: PinoLoggerAdapter): Promise<Dependencies> {
     keyId: environment.CUSTOMER_JWT_KEY_ID,
   });
 
-  const identityRepository = new PgCustomerIdentityRepository(pool, timings);
-  const hashService = new BcryptHashService(timings);
-
   return {
-    timings,
-    pool,
-    createController: (invocationLogger: ILogger) =>
-      new CustomerAuthController(
+    createController: (invocationLogger: ILogger, callContext: InternalCallContext) => {
+      // One client per invocation: it carries that invocation's request id and traceparent.
+      const internalHttpClient = new InternalHttpClient(callContext);
+
+      return new CustomerAuthController(
         new AuthenticateCustomerUseCase(
-          identityRepository,
-          hashService,
+          new HttpIdentityCustomerCredentialsGateway(
+            internalHttpClient,
+            environment.IDENTITY_INTERNAL_URL,
+          ),
+          new HttpWorkOrderUserCustomersGateway(
+            internalHttpClient,
+            environment.WORK_ORDER_INTERNAL_URL,
+          ),
           tokenIssuer,
           invocationLogger,
         ),
-      ),
+      );
+    },
   };
 }

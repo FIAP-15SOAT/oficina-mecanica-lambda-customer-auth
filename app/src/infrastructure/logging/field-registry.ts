@@ -38,12 +38,11 @@ export const DECLARED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'cloud.resource_id',
   // Correlação
   'request.id',
+  'trace_id',
   // Atendimento da invocação
   'http.request.method',
   'http.response.status_code',
   'oficina.faas.invocation.duration_ms',
-  'oficina.db.query.duration_ms',
-  'oficina.auth.password.verification.duration_ms',
   // Erro
   'error.type',
   'oficina.error.message',

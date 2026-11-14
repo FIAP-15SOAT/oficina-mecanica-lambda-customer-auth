@@ -1,30 +1,19 @@
+import { IIdentityCustomerCredentialsGateway } from '@application/ports/output/gateways/identity/identity-customer-credentials-gateway.interface';
+import { IWorkOrderUserCustomersGateway } from '@application/ports/output/gateways/work-order/work-order-user-customers-gateway.interface';
 import { ILogger } from '@application/ports/output/logger.service.interface';
-import { IHashService } from '@application/ports/output/hash.service.interface';
 import { ITokenIssuerService } from '@application/ports/output/token-issuer.service.interface';
-import { CustomerUser } from '@domain/entities/customer-user.entity';
-import { ICustomerIdentityRepository } from '@domain/interfaces/repositories/customer-identity.repository.interface';
 
 export const VALID_CPF = '12345678909';
 export const FORMATTED_CPF = '123.456.789-09';
 export const MASKED_CPF = '***.***.789-09';
 export const SUBJECT_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
-export const STORED_HASH = '$2b$12$storedhashstoredhashsto';
 
-export function createMockCustomerUser(overrides: Partial<CustomerUser> = {}): CustomerUser {
-  return CustomerUser.create({
-    id: overrides.id ?? SUBJECT_ID,
-    passwordHash: overrides.passwordHash ?? STORED_HASH,
-    isActive: overrides.isActive ?? true,
-    hasActiveCustomerLink: overrides.hasActiveCustomerLink ?? true,
-  });
+export function createMockIdentityCustomerCredentialsGateway(): jest.Mocked<IIdentityCustomerCredentialsGateway> {
+  return { authenticate: jest.fn().mockResolvedValue(null) };
 }
 
-export function createMockIdentityRepository(): jest.Mocked<ICustomerIdentityRepository> {
-  return { findByCpf: jest.fn().mockResolvedValue(null) };
-}
-
-export function createMockHashService(): jest.Mocked<IHashService> {
-  return { compare: jest.fn().mockResolvedValue(false) };
+export function createMockWorkOrderUserCustomersGateway(): jest.Mocked<IWorkOrderUserCustomersGateway> {
+  return { findActiveByUserId: jest.fn().mockResolvedValue([]) };
 }
 
 export function createMockTokenIssuer(): jest.Mocked<ITokenIssuerService> {

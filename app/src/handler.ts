@@ -5,6 +5,7 @@ import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { REQUEST_ID_ATTRIBUTE, resolveCorrelationId } from '@infrastructure/logging/correlation';
 import { resolveExecutionAttributes } from '@infrastructure/logging/execution-attributes';
 import { buildInvocationLogLine } from '@infrastructure/logging/invocation-log.builder';
+import { createTraceContext, TRACE_ID_ATTRIBUTE } from '@infrastructure/logging/trace-context';
 import { HandlerResponse } from '@infrastructure/serverless/platform-types';
 import { validateLoginEvent } from '@infrastructure/serverless/login-event.validator';
 import {
@@ -14,22 +15,19 @@ import {
   resolveTechnicalEvent,
 } from '@infrastructure/serverless/response.translator';
 
-import { isDatabaseAuthenticationFailure } from '@infrastructure/persistence/pg/connection';
-
-import { Dependencies, discardComposition, getBaseLogger, getDependencies } from './bootstrap';
+import { getBaseLogger, getDependencies } from './bootstrap';
 
 /**
- * Começa a composição durante a **inicialização do ambiente**, em vez de esperar
- * a primeira invocação. Sem isso, a primeira credencial real pagaria o
- * gerenciador de segredos e a importação do PEM.
+ * Starts the composition during **environment initialization** instead of
+ * waiting for the first invocation. Without it, the first real credential would
+ * pay for the secrets manager and the PEM import.
  *
- * O handshake do banco fica **de fora**: o pool é preguiçoso e só conecta na
- * primeira consulta. É proposital — abrir a conexão aqui faria um banco
- * indisponível derrubar a composição inteira, trocando o `503` correto por um
- * `500` de inicialização.
+ * The Identity and work-order calls stay **out**: they belong to the invocation,
+ * and an unavailable service answers it with `503` instead of failing the
+ * composition with an initialization `500`.
  *
- * A rejeição é engolida de propósito: `getDependencies` já registra a causa e
- * descarta o cache, e a invocação seguinte reencontra o erro.
+ * The rejection is swallowed on purpose: `getDependencies` already logs the
+ * cause and drops the cache, and the next invocation meets the error again.
  */
 export function warmUp(): void {
   if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
@@ -44,13 +42,15 @@ export async function handler(
   context: Context,
 ): Promise<HandlerResponse> {
   const startedAt = performance.now();
+  const requestId = resolveCorrelationId(event.headers, context.awsRequestId);
+  const { traceId, traceparent } = createTraceContext();
 
   const logger = getBaseLogger().forInvocation({
     ...resolveExecutionAttributes(context),
-    [REQUEST_ID_ATTRIBUTE]: resolveCorrelationId(event.headers, context.awsRequestId),
+    [REQUEST_ID_ATTRIBUTE]: requestId,
+    [TRACE_ID_ATTRIBUTE]: traceId,
   });
 
-  let timings: Dependencies['timings'] | undefined;
   let failure: unknown;
   let response: HandlerResponse;
   let composed = false;
@@ -59,8 +59,6 @@ export async function handler(
     const dependencies = await getDependencies();
 
     composed = true;
-    timings = dependencies.timings;
-    timings.reset();
 
     const validation = validateLoginEvent(event);
 
@@ -73,7 +71,9 @@ export async function handler(
     }
 
     response = buildSuccessResponse(
-      await dependencies.createController(logger).login(validation.request),
+      await dependencies
+        .createController(logger, { requestId, traceparent })
+        .login(validation.request),
     );
   } catch (error) {
     failure = error;
@@ -90,18 +90,6 @@ export async function handler(
       logger.event(technicalEvent, {}, error);
     }
 
-    /**
-     * A credencial lida na composição deixou de valer. Descartar a composição
-     * faz a invocação seguinte reler o segredo, em vez de deixar este ambiente
-     * inutilizável até a plataforma reciclá-lo.
-     *
-     * A resposta ao chamador **não** muda: continua a de indisponibilidade, e a
-     * causa não vaza.
-     */
-    if (composed && isDatabaseAuthenticationFailure(error)) {
-      discardComposition();
-    }
-
     response = buildErrorResponse(error);
   }
 
@@ -109,7 +97,6 @@ export async function handler(
     method: event.requestContext?.http?.method ?? '',
     statusCode: response.statusCode,
     durationMs: performance.now() - startedAt,
-    ...timings?.snapshot(),
     ...(failure === undefined ? {} : { error: failure }),
   });
 

@@ -1,7 +1,6 @@
 import { defineLogEvent } from './log-event';
 
-export type AuthenticationFailureReason =
-  'unknown_user' | 'inactive_user' | 'wrong_password' | 'no_active_customer_link';
+export type AuthenticationFailureReason = 'credential_refused' | 'no_active_customer_link';
 
 export type InputRejectionReason =
   'invalid_cpf' | 'missing_body' | 'malformed_body' | 'body_too_large' | 'invalid_credentials';

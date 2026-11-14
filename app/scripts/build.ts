@@ -3,11 +3,6 @@ import { readFile, rm } from 'node:fs/promises';
 
 const ALIASES = ['@domain/', '@application/', '@infrastructure/', '@interface-adapters/'];
 
-/**
- * `pg-native` fica *externo* por necessidade: o driver o referencia atrás de
- * um getter opcional que esta função nunca toca, e sem marcá-lo o esbuild
- * falha ao resolver.
- */
 async function buildArtifact(): Promise<void> {
   await rm('dist', { recursive: true, force: true });
 
@@ -22,7 +17,6 @@ async function buildArtifact(): Promise<void> {
     sourcesContent: false,
     treeShaking: true,
     legalComments: 'none',
-    external: ['pg-native'],
     tsconfig: 'tsconfig.json',
     logLevel: 'info',
   });
