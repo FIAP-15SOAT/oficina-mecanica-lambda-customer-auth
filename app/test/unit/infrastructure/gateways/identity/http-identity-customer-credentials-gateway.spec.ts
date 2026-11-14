@@ -57,4 +57,16 @@ describe('HttpIdentityCustomerCredentialsGateway', () => {
 
     await expect(gateway.authenticate(CPF, PASSWORD)).rejects.toBe(failure);
   });
+
+  it.each([{}, { data: {} }, { data: { userId: 42 } }, '<html></html>', null])(
+    'should treat an answer without the user id as an unavailability (%p)',
+    async (answer) => {
+      internalHttpClient.request.mockResolvedValue(answer);
+
+      const error = await gateway.authenticate(CPF, PASSWORD).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ServiceIntegrationException);
+      expect(error).toMatchObject({ message: `Falha na chamada interna POST ${PATH}` });
+    },
+  );
 });

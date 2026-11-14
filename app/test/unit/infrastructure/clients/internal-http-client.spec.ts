@@ -1,10 +1,8 @@
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import { Agent } from 'node:http';
+import { Agent as HttpsAgent } from 'node:https';
 
-import {
-  INTERNAL_HTTP_TIMEOUT_MS,
-  InternalHttpClient,
-} from '@infrastructure/clients/internal-http-client';
+import { InternalHttpClient } from '@infrastructure/clients/internal-http-client';
 import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 
 const CALL_CONTEXT = {
@@ -39,7 +37,6 @@ describe('InternalHttpClient', () => {
       body: { cpf: '12345678909' },
     });
 
-    expect(INTERNAL_HTTP_TIMEOUT_MS).toBe(2_000);
     expect(axiosRequest).toHaveBeenCalledWith(
       expect.objectContaining({
         baseURL: BASE_URL,
@@ -75,6 +72,21 @@ describe('InternalHttpClient', () => {
     expect(config.httpAgent).toMatchObject({ keepAlive: false });
   });
 
+  it('should open a new connection for each call over https too', async () => {
+    axiosRequest.mockResolvedValue({ data: {} });
+
+    await internalHttpClient.request({
+      method: 'GET',
+      baseUrl: 'https://internal-nlb.local:8081',
+      path: PATH,
+    });
+
+    const [config] = axiosRequest.mock.calls[0];
+
+    expect(config.httpsAgent).toBeInstanceOf(HttpsAgent);
+    expect(config.httpsAgent).toMatchObject({ keepAlive: false });
+  });
+
   it('should return the owner response data', async () => {
     axiosRequest.mockResolvedValue({ data: { data: { userId: 'user-1' } } });
 
@@ -101,6 +113,7 @@ describe('InternalHttpClient', () => {
         .catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(ServiceIntegrationException);
+
       expect(error).toMatchObject({
         statusCode: status,
         message: `Falha na chamada interna POST ${PATH} com status ${status}`,
@@ -118,6 +131,7 @@ describe('InternalHttpClient', () => {
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ServiceIntegrationException);
+
     expect(error).toMatchObject({
       statusCode: undefined,
       message: `Falha na chamada interna GET ${PATH}`,

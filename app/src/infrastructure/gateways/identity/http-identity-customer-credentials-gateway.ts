@@ -15,17 +15,26 @@ export class HttpIdentityCustomerCredentialsGateway implements IIdentityCustomer
     cpf: string,
     password: string,
   ): Promise<IdentityCustomerAuthenticationGatewayResponse | null> {
+    const path = '/internal/customer-authentications';
+
     try {
-      const { data } = await this.internalHttpClient.request<{
-        data: IdentityCustomerAuthenticationGatewayResponse;
-      }>({
+      const answer = await this.internalHttpClient.request<{
+        data?: IdentityCustomerAuthenticationGatewayResponse;
+      } | null>({
         method: 'POST',
         baseUrl: this.identityInternalUrl,
-        path: '/internal/customer-authentications',
+        path,
         body: { cpf, password },
       });
 
-      return data;
+      const credential = answer?.data;
+
+      // A success without the user id breaks the contract: refusing it as a wrong credential would hide the cause.
+      if (typeof credential?.userId !== 'string') {
+        throw new ServiceIntegrationException(`POST ${path}`);
+      }
+
+      return credential;
     } catch (error) {
       // Any other refusal means the two contracts drifted apart, so it stays an unavailability.
       if (

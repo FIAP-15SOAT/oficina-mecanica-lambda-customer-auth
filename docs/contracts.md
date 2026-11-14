@@ -96,7 +96,7 @@ da solução usam:
 | `400` | `Bad Request` | `CPF é obrigatório` | `cpf` presente, porém só com espaços |
 | `400` | `Bad Request` | `CPF inválido` | CPF reprovado na validação |
 | `401` | `Unauthorized` | `Credenciais inválidas` | **Qualquer** falha de credencial |
-| `503` | `Service Unavailable` | `Serviço temporariamente indisponível` | Identity ou work-order indisponível, sem resposta em 2 s, ou com resposta fora do contrato (5xx, redirect ou 4xx que não o `401` do Identity) |
+| `503` | `Service Unavailable` | `Serviço temporariamente indisponível` | Identity ou work-order indisponível, sem resposta em 2 s, ou com resposta fora do contrato (5xx, redirect, 4xx que não o `401` do Identity, ou sucesso sem o `userId` do Identity ou sem a lista do work-order) |
 | `500` | `Internal Server Error` | `Ocorreu um erro inesperado` | Falha ao assinar o token, ou erro não previsto |
 
 ### A resposta `401` é sempre a mesma

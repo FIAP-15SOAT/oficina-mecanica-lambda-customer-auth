@@ -216,6 +216,12 @@ describe('customer authentication against the owners stubs', () => {
       expect((await login({ cpf: CPF_GRANTED, password: PASSWORD })).statusCode).toBe(503);
     });
 
+    it('should answer 503 when the identity fails', async () => {
+      internalServicesStub.nextResponses.set(IDENTITY_ROUTE, { status: 500 });
+
+      expect((await login({ cpf: CPF_GRANTED, password: PASSWORD })).statusCode).toBe(503);
+    });
+
     it('should answer 503 when the work order fails', async () => {
       internalServicesStub.nextResponses.set(userCustomersRoute, { status: 500 });
 

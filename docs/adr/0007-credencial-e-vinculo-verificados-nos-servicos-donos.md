@@ -50,8 +50,9 @@ de 2 s, sem seguir redirect e com conexão nova a cada chamada. A conexão nova 
 deliberada: o ambiente da função congela entre invocações e os serviços fecham a
 conexão ociosa depois de 5 s, então uma conexão reaproveitada pode já estar
 fechada quando a invocação seguinte a usa. Qualquer falha de chamada — tempo
-esgotado, conexão recusada, redirect, 5xx ou 4xx que não seja o `401` do
-Identity — responde `503`.
+esgotado, conexão recusada, redirect, 5xx, 4xx que não seja o `401` do
+Identity ou sucesso sem o `userId` do Identity ou sem a lista do work-order —
+responde `503`.
 
 A recusa continua idêntica para as quatro causas. A função registra a etapa
 (`credential_refused` ou `no_active_customer_link`); a causa da recusa da

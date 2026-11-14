@@ -161,10 +161,11 @@ O nível da linha do atendimento decorre do status: `>= 500` → `error`,
 `>= 400` → `warn`, caso contrário `info`.
 
 `internal.call.failed` sai quando a chamada ao Identity ou ao work-order falha —
-tempo esgotado, conexão recusada, redirect, 4xx fora do contrato ou 5xx — e a
+tempo esgotado, conexão recusada, redirect, 4xx fora do contrato, 5xx ou sucesso
+sem o dado esperado (o `userId` do Identity, a lista do work-order) — e a
 resposta é `503`. A chamada que falhou está em `exception.message`:
-`Falha na chamada interna <método> <rota>`, mais `com status <n>` quando houve
-resposta, por exemplo `Falha na chamada interna POST /internal/customer-authentications com status 500`.
+`Falha na chamada interna <método> <rota>`, mais `com status <n>` quando o
+serviço respondeu fora da faixa 2xx, por exemplo `Falha na chamada interna POST /internal/customer-authentications com status 500`.
 
 Duas linhas não carregam `request.id`, `trace_id` nem os atributos `faas.*`: os
 dois eventos de composição. Elas saem do logger do **ambiente**, e não do da

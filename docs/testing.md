@@ -67,6 +67,7 @@ socket, e por isso vivem aqui, não no unitário:
 | --- | --- |
 | O Identity demora mais que 2 s | `503` |
 | O Identity responde um redirect | `503`, sem seguir o redirect |
+| O Identity responde 5xx | `503` |
 | O work-order responde 5xx ou recusa a conexão | `503` |
 | Cada chamada abre conexão nova | O stub recebe `Connection: close` nas duas |
 | A URL interna termina com `/` | A chamada chega a `/internal/...`, sem barra dupla |
@@ -108,11 +109,12 @@ bem-intencionada não desfaça uma decisão.
 | O token é verificável com a chave pública correspondente, e só com ela | `jose-token-issuer.spec.ts` |
 | Um PEM inválido falha na **inicialização**, não na primeira assinatura | `jose-token-issuer.spec.ts` |
 | O corpo da requisição **nunca** alcança o log — inclusive sob chave neutra | `handler-logging.spec.ts` |
-| Nenhuma linha carrega senha, hash, CPF em texto puro ou o token — inclusive quando a chamada ao Identity estoura o tempo ou é redirecionada | unitário e ponta a ponta |
+| Nenhuma linha carrega senha, hash, CPF em texto puro ou o token — inclusive quando a chamada ao Identity estoura o tempo, responde 5xx ou é redirecionada | unitário e ponta a ponta |
 | Toda chave emitida pertence ao dicionário declarado | unitário e ponta a ponta |
 | Toda linha da invocação carrega `trace_id`, inclusive o `400` de entrada e o `500` de composição, em que nenhuma chamada sai | `handler-logging.spec.ts` |
 | O CPF inválido é recusado **antes** de qualquer chamada ao Identity ou ao work-order | `authenticate-customer.use-case.spec.ts` |
 | Só o `401` do Identity é recusa; outro 4xx dele segue como falha de chamada, que responde `503` | `http-identity-customer-credentials-gateway.spec.ts` |
+| Sucesso sem o `userId` do Identity ou sem a lista do work-order responde `503`, nunca `401` nem token | `http-identity-customer-credentials-gateway.spec.ts`, `http-work-order-user-customers-gateway.spec.ts` |
 | A resposta de sucesso não publica campo novo do DTO por acidente | `customer-auth.presenter.spec.ts` |
 | Em produção, segredo em variável de ambiente é recusado | `environment.spec.ts` |
 | O ponto de entrada carrega **sem nenhuma dependência instalada**, fora da árvore do repositório | job `Package` |

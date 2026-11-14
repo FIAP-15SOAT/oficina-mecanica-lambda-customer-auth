@@ -53,4 +53,16 @@ describe('HttpWorkOrderUserCustomersGateway', () => {
 
     await expect(gateway.findActiveByUserId(USER_ID)).rejects.toBe(failure);
   });
+
+  it.each([{}, { data: null }, { data: { items: [], total: 0 } }, '<html></html>', null])(
+    'should treat an answer without the customer list as an unavailability (%p)',
+    async (answer) => {
+      internalHttpClient.request.mockResolvedValue(answer);
+
+      const error = await gateway.findActiveByUserId(USER_ID).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ServiceIntegrationException);
+      expect(error).toMatchObject({ message: `Falha na chamada interna GET ${PATH}` });
+    },
+  );
 });

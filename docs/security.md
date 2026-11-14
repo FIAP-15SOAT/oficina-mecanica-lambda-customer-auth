@@ -36,8 +36,9 @@ para todos os serviços, não só para esta função.
 | Vazamento de credencial em log | — | O corpo da requisição **nunca** é registrado; asserção negativa unitária e de ponta a ponta |
 | Vazamento de dado pessoal em log | CPF na requisição | Mascarado preservando a forma (`***.***.789-09`), pela classificação do registro |
 | Vazamento de detalhe interno | Corpo das respostas `500`/`503` | Mensagem constante; nada da exceção — URL interna, status devolvido pelo serviço — é repassado |
-| Vazamento da senha numa chamada interna que falha | O erro do cliente HTTP guarda o corpo enviado ao Identity | O log registra tipo, mensagem saneada e as pilhas da cadeia de causas, nunca o corpo nem a configuração da requisição; asserção de ponta a ponta com o Identity estourando o tempo e respondendo redirect |
-| Resposta inesperada lida como recusa | Status do Identity fora do contrato | Só o `401` do Identity é recusa; qualquer outro 4xx, 5xx ou redirect responde `503`, nunca `401` |
+| Vazamento da senha numa chamada interna que falha | O erro do cliente HTTP guarda o corpo enviado ao Identity | O log registra tipo, mensagem saneada e as pilhas da cadeia de causas, nunca o corpo nem a configuração da requisição; asserção de ponta a ponta com o Identity estourando o tempo, respondendo 5xx e respondendo redirect |
+| Resposta inesperada lida como recusa | Resposta do Identity fora do contrato | Só o `401` do Identity é recusa; qualquer outro 4xx, 5xx, redirect ou sucesso sem o `userId` responde `503`, nunca `401` |
+| Token emitido sem o vínculo conferido | Resposta do work-order fora do contrato | Sucesso sem a lista de clientes responde `503`; o token só sai com a lista conferida e não vazia |
 | Confusão de algoritmo no token | Verificação no work-order | `RS256` assimétrico, verificado por estratégia separada da interna; o token externo nunca alcança o verificador HMAC |
 | Escalonamento por claim forjada | Conteúdo do token | Além de `iss`, `aud`, `iat` e `exp`, o token carrega `sub` como identidade; papel e escopo nunca vêm dele |
 | Corpo hostil como negação de serviço | Corpo da requisição | Limite de 4096 bytes depois da decodificação base64 e antes da desserialização JSON |
