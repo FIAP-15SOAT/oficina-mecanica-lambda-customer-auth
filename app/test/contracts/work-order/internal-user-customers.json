@@ -1,5 +1,5 @@
 {
-  "$source": "provisional: built from the documented contract until the work order publishes the fixture of GET /internal/users/:userId/customers",
+  "$source": "oficina-mecanica-work-order-service app/test/contracts/internal-user-customers.json",
   "data": [
     {
       "id": "70bb2668-aa3a-4412-afca-198286ca98db",

@@ -48,7 +48,7 @@ do dono. Cópias ficam em `app/test/contracts/`:
 | Arquivo | Origem |
 | --- | --- |
 | `identity/internal-customer-authentication.json` | `oficina-mecanica-identity-service`, `app/test/contracts/internal-customer-authentication.json` |
-| `work-order/internal-user-customers.json` | Provisória: montada a partir do contrato documentado de `GET /internal/users/:userId/customers`, até o `oficina-mecanica-work-order-service` publicar a fixture dessa rota |
+| `work-order/internal-user-customers.json` | `oficina-mecanica-work-order-service`, `app/test/contracts/internal-user-customers.json` |
 
 O campo `$source` de cada arquivo registra a origem. Quando o dono muda a rota,
 a cópia é atualizada e os testes daqui reprovam se a função deixou de entender a
