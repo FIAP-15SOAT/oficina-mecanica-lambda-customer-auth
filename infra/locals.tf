@@ -5,11 +5,8 @@ locals {
   vpc_id             = data.terraform_remote_state.aws_base.outputs.vpc_id
   private_subnet_ids = data.terraform_remote_state.aws_base.outputs.private_subnet_ids
 
-  db_host = data.terraform_remote_state.database.outputs.db_host
-  db_port = data.terraform_remote_state.database.outputs.db_port
-  db_name = data.terraform_remote_state.database.outputs.db_name
-
-  db_credentials_secret_arn = data.terraform_remote_state.database.outputs.db_credentials_secret_arn
+  nlb_dns_name           = data.terraform_remote_state.k8s.outputs.nlb_dns_name
+  service_listener_ports = data.terraform_remote_state.k8s.outputs.service_listener_ports
 
   api_execution_arn = data.terraform_remote_state.gateway.outputs.api_execution_arn
   api_endpoint      = data.terraform_remote_state.gateway.outputs.api_endpoint
@@ -19,15 +16,12 @@ locals {
   base_environment = {
     NODE_ENV = "production"
 
-    DATABASE_HOST = local.db_host
-    DATABASE_PORT = tostring(local.db_port)
-    DATABASE_NAME = local.db_name
+    IDENTITY_INTERNAL_URL   = "http://${local.nlb_dns_name}:${local.service_listener_ports["identity"]}"
+    WORK_ORDER_INTERNAL_URL = "http://${local.nlb_dns_name}:${local.service_listener_ports["work-order"]}"
 
-    DATABASE_SECRET_ID                 = local.db_credentials_secret_arn
     CUSTOMER_JWT_PRIVATE_KEY_SECRET_ID = aws_secretsmanager_secret.jwt_private_key.arn
 
-    NODE_EXTRA_CA_CERTS = var.node_extra_ca_certs
-    NODE_OPTIONS        = "--enable-source-maps"
+    NODE_OPTIONS = "--enable-source-maps"
 
     SERVICE_VERSION = var.service_version
   }

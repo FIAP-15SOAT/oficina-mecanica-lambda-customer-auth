@@ -12,13 +12,13 @@ data "terraform_remote_state" "aws_base" {
   }
 }
 
-data "terraform_remote_state" "database" {
+data "terraform_remote_state" "k8s" {
   backend = "s3"
 
   config = {
-    bucket = var.database_state_bucket
-    key    = var.database_state_key
-    region = var.database_state_region
+    bucket = var.k8s_state_bucket
+    key    = var.k8s_state_key
+    region = var.k8s_state_region
   }
 }
 

@@ -37,19 +37,19 @@ variable "aws_base_state_region" {
   default     = "us-east-1"
 }
 
-variable "database_state_bucket" {
-  description = "S3 bucket name that stores the database Terraform state"
+variable "k8s_state_bucket" {
+  description = "S3 bucket name that stores the Kubernetes platform Terraform state"
   type        = string
 }
 
-variable "database_state_key" {
-  description = "S3 object key for the database Terraform state (source of db_host, db_port, db_name and db_credentials_secret_arn)"
+variable "k8s_state_key" {
+  description = "S3 object key for the Kubernetes platform Terraform state (source of nlb_dns_name and service_listener_ports)"
   type        = string
-  default     = "infra/prod-simulated/infra-database-work-order/terraform.tfstate"
+  default     = "infra/prod-simulated/infra-k8s/terraform.tfstate"
 }
 
-variable "database_state_region" {
-  description = "AWS region of the database state bucket"
+variable "k8s_state_region" {
+  description = "AWS region of the Kubernetes platform state bucket"
   type        = string
   default     = "us-east-1"
 }
@@ -96,7 +96,7 @@ variable "lambda_runtime" {
 variable "lambda_memory_size" {
   description = "Memory in MB. On the platform memory is also the CPU control"
   type        = number
-  default     = 1024
+  default     = 256
 }
 
 variable "lambda_timeout" {
@@ -120,12 +120,6 @@ variable "log_retention_in_days" {
   description = "Log group retention, in days"
   type        = number
   default     = 14
-}
-
-variable "node_extra_ca_certs" {
-  description = "Path to the certificate authority bundle the runtime image already ships"
-  type        = string
-  default     = "/etc/pki/tls/certs/ca-bundle.crt"
 }
 
 variable "service_version" {
