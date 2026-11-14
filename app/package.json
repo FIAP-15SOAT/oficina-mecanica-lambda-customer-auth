@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.907.0",
+    "axios": "^1.21.1",
     "bcryptjs": "^3.0.2",
     "jose": "^5.10.0",
     "pg": "^8.20.0",
