@@ -80,9 +80,9 @@ describe('loadEnvironment', () => {
   });
 
   /**
-   * O modo é enumerado e obrigatório porque é ele que libera segredo em
-   * variável de ambiente. Ausente ou desconhecido, a
-   * inicialização falha em vez de assumir o modo mais permissivo.
+   * The mode is enumerated and required because it is what allows a secret in
+   * an environment variable. Missing or unknown, initialization fails instead
+   * of assuming the most permissive mode.
    */
   it.each([undefined, 'prod', 'staging', ''])(
     'should refuse to start when NODE_ENV is %p',
@@ -101,9 +101,9 @@ describe('loadEnvironment', () => {
   });
 
   /**
-   * O fallback não é apenas desencorajado em produção: é recusado. Uma chave
-   * privada de assinatura em variável de ambiente fica legível para quem puder
-   * ler a configuração da função, fora de rotação e de auditoria.
+   * The fallback is not just discouraged in production: it is refused. A private
+   * signing key in an environment variable is readable by anyone who can read
+   * the function configuration, outside rotation and audit.
    */
   it('should refuse the CUSTOMER_JWT_PRIVATE_KEY fallback in production', () => {
     const source = {
@@ -128,9 +128,9 @@ describe('loadEnvironment', () => {
   });
 
   /**
-   * Um PEM não atravessa uma variável de ambiente com as quebras de linha
-   * intactas. A forma escapada é a única que `.env` e o descritor de contêiner
-   * transportam.
+   * A PEM does not cross an environment variable with its line breaks intact.
+   * The escaped form is the only one that `.env` and the container descriptor
+   * carry.
    */
   it('should restore the newlines of an escaped PEM', () => {
     const escaped = '-----BEGIN PRIVATE KEY-----\\nMIIB\\n-----END PRIVATE KEY-----\\n';

@@ -34,7 +34,7 @@ function isEmailShape(value: string): boolean {
     return false;
   }
 
-  // O ponto precisa ter ao menos um caractere de domínio de cada lado.
+  // The dot needs at least one domain character on each side.
   const dot = value.indexOf('.', separator + 2);
 
   return dot !== -1 && dot < value.length - 1;
@@ -59,10 +59,10 @@ function maskFreeText(value: string): string {
 }
 
 /**
- * Um identificador formatado é um valor composto só de blocos numéricos
- * separados por pontuação — CPF, CNPJ, CEP, telefone. Mascará-lo com a regra de
- * texto livre (`12***09`) destruiria a forma e ninguém reconheceria mais o que
- * o campo era.
+ * A formatted identifier is a value made only of numeric blocks separated by
+ * punctuation — CPF, CNPJ, CEP, phone. Masking it with the free-text rule
+ * (`12***09`) would destroy the shape and nobody would recognize what the
+ * field was anymore.
  */
 function isFormattedIdentifier(value: string): boolean {
   const runs = findAlphanumericRuns(value);
@@ -89,9 +89,9 @@ function maskFormattedIdentifier(value: string): string {
 }
 
 /**
- * O último bloco sempre aparece. O penúltimo só entra junto quando os dois somam
- * até 5 caracteres — é o que produz `***.***.789-09` no CPF (3 + 2) sem revelar
- * demais em um telefone, onde o penúltimo bloco já tem 5 dígitos sozinho.
+ * The last block always shows. The one before it joins only when the two add
+ * up to 5 characters — that yields `***.***.789-09` for the CPF (3 + 2) without
+ * revealing too much of a phone, where the second-to-last block alone has 5 digits.
  */
 function resolveVisibleRuns(runs: RegExpExecArray[]): Set<number> {
   const lastIndex = runs.length - 1;

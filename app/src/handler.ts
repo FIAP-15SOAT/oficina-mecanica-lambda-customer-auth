@@ -79,10 +79,10 @@ export async function handler(
     failure = error;
 
     /**
-     * Uma falha de composição já foi registrada com a sua causa em `bootstrap`,
-     * como configuração inválida. Reclassificá-la aqui a anunciaria uma segunda
-     * vez, e com outro nome — um PEM ilegível sairia também como falha de
-     * assinatura, apontando o diagnóstico para o runtime em vez da implantação.
+     * A composition failure was already logged with its cause in `bootstrap`,
+     * as invalid configuration. Reclassifying it here would announce it a second
+     * time, under another name — an unreadable PEM would also leave as a signing
+     * failure, pointing the diagnosis at the runtime instead of the deployment.
      */
     const technicalEvent = composed ? resolveTechnicalEvent(error) : undefined;
 

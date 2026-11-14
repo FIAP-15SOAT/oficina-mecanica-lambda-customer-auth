@@ -28,9 +28,9 @@ function bodyOf(response: { body?: string }) {
 }
 
 /**
- * O aquecimento existe para que a primeira credencial real nao pague segredos,
- * PEM e handshake. Fora da plataforma ele nao age: um efeito de importacao
- * surpreenderia teste e script.
+ * Warm-up exists so the first real credential does not pay for secrets, PEM
+ * and handshake. Outside the platform it does nothing: an import side effect
+ * would surprise tests and scripts.
  */
 describe('warmUp', () => {
   const original = process.env.AWS_LAMBDA_FUNCTION_NAME;
@@ -102,7 +102,7 @@ describe('handler', () => {
       });
     });
 
-    /** O corpo carrega um bearer token: nenhum intermediário deve retê-lo. */
+    /** The body carries a bearer token: no intermediary may keep it. */
     it('should forbid caching the response that carries the token', async () => {
       const response = await handler(buildJsonEvent(CREDENTIAL), buildContext());
 
@@ -146,10 +146,10 @@ describe('handler', () => {
     });
 
     /**
-     * A montagem da linha de atendimento não pode alterar a resposta — a spec
-     * de logging proíbe. Um evento sem `requestContext` chegava aqui com a
-     * resposta já construída e derrubava a invocação com um `TypeError`,
-     * entregando erro de plataforma no lugar do envelope documentado.
+     * Building the invocation line must not change the response — the logging
+     * spec forbids it. An event without `requestContext` reached here with the
+     * response already built and brought the invocation down with a `TypeError`,
+     * delivering a platform error instead of the documented envelope.
      */
     it('should answer normally when the event carries no requestContext', async () => {
       mocks.identityCustomerCredentialsGateway.authenticate.mockResolvedValue(
@@ -240,9 +240,9 @@ describe('handler', () => {
     });
 
     /**
-     * A composição acontece na primeira invocação. Se ela falhar, o cliente
-     * precisa receber o envelope documentado — deixar a exceção escapar entrega
-     * um erro de plataforma, que não está no contrato.
+     * The composition happens on the first invocation. If it fails, the client
+     * must receive the documented envelope — letting the exception escape delivers
+     * a platform error, which is not in the contract.
      */
     it('should answer with the documented envelope when the composition fails', async () => {
       dependenciesMock.mockRejectedValue(new Error('secrets manager indisponível'));

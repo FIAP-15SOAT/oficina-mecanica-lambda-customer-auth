@@ -91,8 +91,8 @@ describe('PinoLoggerAdapter — catalog and dictionary', () => {
   });
 
   /**
-   * O CPF é protegido pela classificação do registro, não por mascaramento no
-   * ponto de chamada — a chamada passa a forma pontuada e o adapter mascara.
+   * The CPF is protected by the record classification, not by masking at the
+   * call site — the call passes the punctuated form and the adapter masks it.
    */
   it('should mask a field declared as personal data', () => {
     const capture = captureLog();

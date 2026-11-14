@@ -22,7 +22,7 @@ env:
   API_REPOSITORY: FIAP-15SOAT/oficina-mecanica-work-order-service
   API_MIGRATOR_COMMIT: 84af3af171cbacf04f63994577633667c97c91b9
   API_MIGRATOR_IMAGE: work-order-service:local
-  # Limite de envio direto do pacote compactado, em bytes (50 MiB).
+  # Direct upload limit of the zipped package, in bytes (50 MiB).
   PACKAGE_SIZE_LIMIT_BYTES: "52428800"
 
 jobs:
@@ -42,9 +42,9 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-ci
-      # Job próprio porque a construção é esbuild, que **apaga anotações de tipo
-      # sem verificá-las**. Sem esta verificação um erro de tipo é empacotado e
-      # publicado.
+      # A job of its own because the build is esbuild, which **strips type annotations
+      # without checking them**. Without this check a type error gets packaged and
+      # published.
       - name: Type check
         working-directory: app
         run: npm run typecheck
@@ -55,8 +55,8 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: ./.github/actions/setup-ci
-      # O limiar de 100% nas quatro métricas vive em jest.config.ts: cobertura
-      # abaixo dele reprova aqui.
+      # The 100% threshold on the four metrics lives in jest.config.ts: coverage
+      # below it fails here.
       - name: Unit tests with coverage
         working-directory: app
         run: npm run test:cov
@@ -94,13 +94,13 @@ jobs:
         working-directory: app
         run: npm run build
 
-      # O carregamento acontece **fora da árvore do repositório**: a resolução
-      # de módulos sobe pelos diretórios ancestrais e encontraria as
-      # dependências instaladas do projeto, transformando a asserção em teatro.
+      # Loading happens **outside the repository tree**: module resolution walks up
+      # the ancestor directories and would find the project's installed
+      # dependencies, turning the assertion into theater.
       #
-      # `pg-native` continua externo e continua não sendo resolvido aqui, porque
-      # o driver só o referencia atrás de um acessor preguiçoso que esta função
-      # nunca toca.
+      # `pg-native` stays external and stays unresolved here, because the driver
+      # only references it behind a lazy accessor that this function never
+      # touches.
       - name: Load the entry point with no dependencies installed
         run: |
           set -euo pipefail

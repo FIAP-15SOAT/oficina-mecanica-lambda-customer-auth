@@ -194,9 +194,9 @@ describe('AuthenticateCustomerUseCase', () => {
     });
 
     /**
-     * O `instanceof` no `catch` não é zelo: sem ele, uma falha alheia à
-     * validação seria registrada como `invalid_cpf` e apontaria o diagnóstico
-     * para o lado errado.
+     * The `instanceof` in the `catch` is not extra care: without it, a failure
+     * unrelated to validation would be logged as `invalid_cpf` and point the
+     * diagnosis the wrong way.
      */
     it('should rethrow a non-domain failure raised while parsing without logging it', async () => {
       const create = jest.spyOn(Cpf, 'create').mockImplementation(() => {

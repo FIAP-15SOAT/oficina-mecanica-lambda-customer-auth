@@ -62,8 +62,8 @@ describe('bootstrap', () => {
   });
 
   /**
-   * A memoização é o motivo de a composição existir num ponto só: segredo e
-   * importação da chave ocorrem uma vez por ambiente, e não uma por invocação.
+   * Memoization is why the composition lives in a single place: the secret and
+   * the key import happen once per environment, not once per invocation.
    */
   it('should not fetch the secret again on a second call', async () => {
     const first = await getDependencies();
@@ -103,9 +103,9 @@ describe('bootstrap — initialization failure', () => {
   });
 
   /**
-   * As duas falhas de inicialização não são a mesma coisa para quem opera:
-   * configuração inválida é defeito de implantação, e segredo indisponível é
-   * dependência externa que pode voltar sozinha. O evento precisa distingui-las.
+   * The two initialization failures are not the same thing to an operator:
+   * invalid configuration is a deployment defect, and an unavailable secret is an
+   * external dependency that may come back by itself. The event must tell them apart.
    */
   it.each([
     ['a missing required variable', { IDENTITY_INTERNAL_URL: undefined }],
@@ -139,8 +139,8 @@ describe('bootstrap — initialization failure', () => {
   });
 
   /**
-   * Uma falha transitória não pode condenar o ambiente a devolver a mesma
-   * promessa rejeitada para sempre.
+   * A transient failure must not doom the environment to return the same
+   * rejected promise forever.
    */
   it('should not memoize a failed initialization', async () => {
     process.env = { ...ENVIRONMENT, IDENTITY_INTERNAL_URL: undefined };

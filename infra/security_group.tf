@@ -1,12 +1,12 @@
-# Grupo de seguranca da funcao.
+# Function security group.
 #
-# Sem regra de ingresso: nada conecta na função — ela é invocada pelo API Gateway,
-# por chamada de serviço, e não por rede. O egresso é liberado porque a função
-# alcança banco, gerenciador de segredos e destino de telemetria, os dois
-# últimos pelo gateway de tradução de rede que já existe nas rotas privadas.
+# No ingress rule: nothing connects to the function — it is invoked by API Gateway,
+# through a service call, not over the network. Egress is open because the function
+# reaches the database, the secrets manager and the telemetry destination, the last
+# two through the network address translation gateway already in the private routes.
 resource "aws_security_group" "secgrp_lambda" {
   name = local.secgrp_lambda_name
-  # O EC2 recusa a descricao de um security group fora de ASCII.
+  # EC2 refuses a security group description outside ASCII.
   description = "Egress for the external customer authentication function"
   vpc_id      = local.vpc_id
 

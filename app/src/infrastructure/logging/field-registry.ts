@@ -20,12 +20,12 @@ export const DECLARED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'timestamp',
   'level',
   'message',
-  // Serviço e ambiente
+  // Service and environment
   'service.name',
   'service.namespace',
   'service.version',
   'deployment.environment.name',
-  // Execução serverless e nuvem
+  // Serverless execution and cloud
   'faas.invocation_id',
   'faas.coldstart',
   'faas.name',
@@ -36,20 +36,20 @@ export const DECLARED_FIELD_NAMES: ReadonlySet<string> = new Set([
   'cloud.platform',
   'cloud.region',
   'cloud.resource_id',
-  // Correlação
+  // Correlation
   'request.id',
   'trace_id',
-  // Atendimento da invocação
+  // Invocation line
   'http.request.method',
   'http.response.status_code',
   'oficina.faas.invocation.duration_ms',
-  // Erro
+  // Error
   'error.type',
   'oficina.error.message',
   'exception.type',
   'exception.message',
   'exception.stacktrace',
-  // Evento e campos de negócio
+  // Event and business fields
   EVENT_NAME_FIELD,
   ...Object.values(LOGICAL_FIELDS).map((definition) => definition.key),
 ]);

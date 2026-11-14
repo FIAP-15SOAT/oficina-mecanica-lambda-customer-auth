@@ -51,9 +51,9 @@ describe('resolveLoggerConfig', () => {
   });
 
   /**
-   * Divergência deliberada: identificação de máquina e de processo não são
-   * emitidas — em ambiente efêmero elas não descrevem nada estável, e os
-   * atributos `faas.*` cumprem o papel.
+   * Deliberate divergence: host and process identification are not emitted —
+   * in an ephemeral environment they describe nothing stable, and the `faas.*`
+   * attributes fill that role.
    */
   it('should not carry machine or process identity', () => {
     const resource: Record<string, unknown> = { ...resolveLoggerConfig({}).resource };

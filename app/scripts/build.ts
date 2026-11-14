@@ -21,8 +21,8 @@ async function buildArtifact(): Promise<void> {
     logLevel: 'info',
   });
 
-  // Os aliases são resolvidos em tempo de build. Um que sobreviva no pacote só
-  // falharia na primeira invocação publicada, então o build falha aqui.
+  // Aliases are resolved at build time. One that survived in the bundle would
+  // only fail on the first published invocation, so the build fails here.
   const bundle = await readFile('dist/handler.js', 'utf8');
   const unresolved = ALIASES.filter((alias) => bundle.includes(alias));
 

@@ -25,7 +25,7 @@ describe('buildSuccessResponse', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    // `no-store` porque o corpo carrega um bearer token.
+    // `no-store` because the body carries a bearer token.
     expect(response.headers).toEqual({
       'content-type': JSON_CONTENT_TYPE,
       'cache-control': 'no-store',
@@ -69,8 +69,8 @@ describe('buildErrorResponse', () => {
   });
 
   /**
-   * O detalhe da chamada interna existe no log e não na resposta: endereço,
-   * porta, rota e pilha de execução ficam do lado de dentro.
+   * The internal call detail lives in the log, not in the response: address,
+   * port, route and stack stay inside.
    */
   it('should not leak internal call detail on the unavailability response', () => {
     const rendered = String(

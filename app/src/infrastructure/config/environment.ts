@@ -6,9 +6,9 @@ import { LOG_LEVELS } from '@infrastructure/logging/logger.config';
 const positiveInteger = z.coerce.number().int().positive();
 
 /**
- * Um PEM não sobrevive a uma variável de ambiente com as quebras de linha
- * intactas. A forma escapada é a única que `.env` e o descritor de contêiner
- * transportam, e restaurá-la aqui evita que cada consumidor invente a sua.
+ * A PEM does not survive an environment variable with its line breaks intact.
+ * The escaped form is the only one that `.env` and the container descriptor
+ * carry, and restoring it here keeps each consumer from inventing its own.
  */
 const pem = z
   .string()

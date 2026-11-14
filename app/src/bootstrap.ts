@@ -27,9 +27,9 @@ let cached: Promise<Dependencies> | undefined;
 let baseLogger: PinoLoggerAdapter | undefined;
 
 /**
- * Logger do ambiente de execução. Vive fora da composição memoizada porque o
- * ponto de entrada precisa dele **mesmo quando a composição falha**: sem isso, o
- * 500 de inicialização sairia sem linha de atendimento e sem correlação.
+ * Execution environment logger. It lives outside the memoized composition because
+ * the entry point needs it **even when the composition fails**: without it, the
+ * initialization 500 would leave with no invocation line and no correlation.
  */
 export function getBaseLogger(): PinoLoggerAdapter {
   if (!baseLogger) {
@@ -51,7 +51,7 @@ export function getDependencies(): Promise<Dependencies> {
   return cached;
 }
 
-/** Descarta a composição memoizada. Existe para o teste, não para o runtime. */
+/** Drops the memoized composition. It exists for the test, not for the runtime. */
 export function resetDependencies(): void {
   cached = undefined;
   baseLogger = undefined;

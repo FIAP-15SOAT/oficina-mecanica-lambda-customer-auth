@@ -10,9 +10,9 @@ const CONTEXT: InvocationContext = {
 };
 
 /**
- * O sinalizador de inicialização a frio é estado de módulo porque é isso que ele
- * descreve: o ambiente de execução, carregado uma vez e reaproveitado. Cada
- * teste recarrega o módulo para obter um ambiente novo.
+ * The cold start flag is module state because that is what it describes: the
+ * execution environment, loaded once and reused. Each test reloads the module
+ * to get a fresh environment.
  */
 function loadModule(): typeof import('@infrastructure/logging/execution-attributes') {
   let loaded!: typeof import('@infrastructure/logging/execution-attributes');

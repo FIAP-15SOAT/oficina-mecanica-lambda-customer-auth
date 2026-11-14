@@ -26,8 +26,8 @@ env:
   TF_VAR_database_state_bucket: ${{ vars.TF_STATE_BUCKET }}
   TF_VAR_gateway_state_bucket: ${{ vars.TF_STATE_BUCKET }}
   TF_IN_AUTOMATION: "true"
-  # CPF estruturalmente válido e inexistente: a recusa de credencial é a
-  # resposta que prova a cadeia inteira sem depender de dado real.
+  # Structurally valid and nonexistent CPF: the credential refusal is the
+  # answer that proves the whole chain without relying on real data.
   SYNTHETIC_CPF: "123.456.789-09"
   SYNTHETIC_PASSWORD: "SenhaSinteticaDeVerificacao"
 
@@ -68,8 +68,8 @@ jobs:
             exit 1
           fi
 
-          # A coleta é opcional, mas ligá-la sem credencial produziria uma
-          # camada anexada que não entrega nada.
+          # Collection is optional, but turning it on without a credential would produce
+          # an attached layer that delivers nothing.
           if [ "${ENABLE_TELEMETRY_COLLECTION}" = "true" ] && [ -z "${DD_API_KEY}" ]; then
             echo "::error::DD_API_KEY não está configurado nos segredos do environment production, mas ENABLE_TELEMETRY_COLLECTION está ligada."
             exit 1
@@ -141,8 +141,8 @@ jobs:
             echo "api_endpoint=$(terraform output -raw api_endpoint)"
           } >> "$GITHUB_OUTPUT"
 
-      # A infraestrutura declara o contêiner do segredo; o **valor** é escrito
-      # aqui, para que o material da chave não transite pelo state.
+      # The infrastructure declares the secret container; the **value** is written
+      # here, so the key material does not pass through the state.
       - name: Write the signing key value idempotently
         if: github.event_name != 'workflow_dispatch' || inputs.action != 'destroy'
         env:
@@ -191,13 +191,13 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Primeiro portão: a invocação direta prova, em cadeia, que o pacote
-      # carrega, a configuração é válida, os dois segredos foram lidos, a chave
-      # importou e a interface de rede alcança o banco.
+      # First gate: the direct invocation proves, in a chain, that the package
+      # loads, the configuration is valid, both secrets were read, the key
+      # imported and the network interface reaches the database.
       #
-      # A discriminação vem do tradutor de respostas: 401 = banco alcançado sem
-      # correspondência; 503 = a operação no banco falhou; 500 = configuração ou
-      # assinatura; ausência de resposta = pacote ou rede.
+      # The discrimination comes from the response translator: 401 = database reached
+      # with no match; 503 = the database operation failed; 500 = configuration or
+      # signing; no response = package or network.
       - name: Post-deploy gate — real invocation
         env:
           FUNCTION_NAME: ${{ needs.deploy.outputs.function_name }}
@@ -247,13 +247,13 @@ jobs:
             *)   echo "::error::A função respondeu ${status}, e o portão exige 401."; exit 1 ;;
           esac
 
-      # Portão final: o único elo que a invocação direta não exercita é a
-      # autorização de invocação concedida ao API Gateway — e é justamente o elo cuja
-      # ausência faz a rota pública responder erro de integração com a função
-      # existindo e saudável.
+      # Final gate: the only link the direct invocation does not exercise is the
+      # invoke permission granted to the API Gateway — precisely the link whose
+      # absence makes the public route answer an integration error while the function
+      # exists and is healthy.
       #
-      # A rota não declara autorizador próprio, então uma recusa de credencial
-      # aqui só pode ter vindo da função.
+      # The route declares no authorizer of its own, so a credential refusal here
+      # can only have come from the function.
       - name: Post-deploy gate — public route
         env:
           API_ENDPOINT: ${{ needs.deploy.outputs.api_endpoint }}

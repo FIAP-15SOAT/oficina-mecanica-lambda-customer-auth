@@ -36,7 +36,7 @@ export class PinoLoggerAdapter implements ILogger {
     }));
   }
 
-  /** Linha do atendimento da invocação: nível derivado do status da resposta. */
+  /** Invocation line: level derived from the response status. */
   emitRecord(level: LogLevelName, message: string, record: Record<string, unknown>): void {
     this.emit(level, message, () => record);
   }

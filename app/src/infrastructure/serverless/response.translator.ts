@@ -23,9 +23,9 @@ export interface ErrorBody {
 }
 
 /**
- * Mensagem pública de cada recusa de entrada. Descreve a **forma** do problema
- * e nunca o conteúdo enviado: repetir o corpo de volta é o caminho clássico
- * para transformar uma resposta de erro em espelho de payload.
+ * Public message for each input refusal. It describes the **shape** of the
+ * problem and never the content sent: echoing the body back is the classic way
+ * to turn an error response into a payload mirror.
  */
 const INPUT_REJECTION_MESSAGES: Readonly<Record<InputRejectionReason, string>> = {
   invalid_cpf: 'CPF inválido',

@@ -40,8 +40,8 @@ describe('JoseTokenIssuerService', () => {
   });
 
   /**
-   * A asserção que importa é a **negativa**: uma claim acrescentada por descuido
-   * — CPF, e-mail, identificador de cliente, papel — falha aqui.
+   * The assertion that matters is the **negative** one: a claim added by mistake
+   * — CPF, e-mail, customer id, role — fails here.
    */
   it('should carry exactly the agreed claims and nothing else', async () => {
     const { accessToken } = await issuer.issueAccessToken(SUBJECT);
@@ -77,10 +77,10 @@ describe('JoseTokenIssuerService', () => {
   });
 
   /**
-   * A chave é importada na composição, e não na primeira assinatura: um PEM
-   * inválido falha ali, apontando o diagnóstico para a implantação em vez do
-   * runtime. O ambiente não é abortado — ele segue respondendo 500 no envelope
-   * documentado, porque erro de plataforma não está no contrato.
+   * The key is imported during composition, not on the first signature: an
+   * invalid PEM fails there, pointing the diagnosis at the deployment instead of
+   * the runtime. The environment is not aborted — it keeps answering 500 in the
+   * documented envelope, because a platform error is not in the contract.
    */
   it('should fail while initializing when the PEM is invalid', async () => {
     await expect(JoseTokenIssuerService.create('nem parece um PEM', SETTINGS)).rejects.toThrow(

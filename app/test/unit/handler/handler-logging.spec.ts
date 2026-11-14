@@ -61,9 +61,9 @@ describe('handler — invocation log', () => {
   });
 
   /**
-   * Uma falha de composição também é um atendimento: sem esta linha o 500 de
-   * cold start sairia sem correlação e sem duração, fora de qualquer consulta
-   * por request id ou SLI.
+   * A composition failure is also an invocation: without this line the cold
+   * start 500 would leave without correlation or duration, outside any query by
+   * request id or SLI.
    */
   it('should still emit the invocation line when the composition fails', async () => {
     dependenciesMock.mockRejectedValue(new Error('secrets manager indisponível'));
@@ -113,11 +113,11 @@ describe('handler — invocation log', () => {
   });
 
   /**
-   * Um PEM ilegível já é registrado por `bootstrap` como configuração inválida.
-   * Reclassificá-lo aqui como falha de assinatura anunciaria a mesma causa duas
-   * vezes, com nomes contraditórios, apontando o diagnóstico para o runtime em
-   * vez da implantação — e a cada invocação, já que a composição falha não é
-   * memoizada.
+   * An unreadable PEM is already logged by `bootstrap` as invalid configuration.
+   * Reclassifying it here as a signing failure would announce the same cause
+   * twice, under contradictory names, pointing the diagnosis at the runtime
+   * instead of the deployment — and on every invocation, since a failed
+   * composition is not memoized.
    */
   it('should not rename a composition failure as a signing failure', async () => {
     dependenciesMock.mockRejectedValue(new TokenSigningException('chave privada inválida'));
@@ -214,9 +214,9 @@ describe('handler — invocation log', () => {
     });
 
     /**
-     * O corpo da requisição não é registrado em hipótese alguma. O terceiro caso
-     * é o que uma classificação por nome de campo não pegaria: a credencial
-     * repetida sob uma chave semanticamente neutra.
+     * The request body is never logged. The third case is the one a
+     * classification by field name would miss: the credential repeated under a
+     * semantically neutral key.
      */
     it.each([
       ['the canonical field', { password: 'Senha@123' }],

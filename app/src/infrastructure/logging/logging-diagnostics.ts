@@ -1,9 +1,9 @@
 import { resolveLoggerConfig } from './logger.config';
 
 /**
- * Um evento `'error'` sem listener em stream do Node derruba o processo, e o
- * `stderr` aceita a escrita e emite o erro depois, de forma assíncrona — fora
- * do alcance do `try/catch` do escritor abaixo.
+ * An `'error'` event with no listener on a Node stream kills the process, and
+ * `stderr` accepts the write and emits the error later, asynchronously — out
+ * of reach of the writer's `try/catch` below.
  */
 process.stderr.on('error', () => undefined);
 
@@ -27,13 +27,13 @@ export interface LoggingFailureDetail {
 let destinationFailureReported = false;
 
 /**
- * Canal de diagnóstico do próprio logger, e por isso escreve direto em `stderr`
- * (fd 2) em vez de usar o `ILogger`: reportar a falha pelo mesmo caminho que
- * acabou de quebrar arrisca recursão, e quando o que falhou é o destino — o
- * `stdout` — logar lá é garantir silêncio.
+ * Diagnostic channel of the logger itself, so it writes straight to `stderr`
+ * (fd 2) instead of using `ILogger`: reporting the failure through the same path
+ * that just broke risks recursion, and when what failed is the destination — the
+ * `stdout` — logging there guarantees silence.
  *
- * O detalhe carrega apenas o nome do campo e o tipo do erro. Nunca o valor:
- * esta linha não pode virar a via de vazamento que a redação existe para evitar.
+ * The detail carries only the field name and the error type. Never the value:
+ * this line must not become the leak path that redaction exists to prevent.
  */
 export function reportLoggingFailure(
   stage: LoggingFailureStage,

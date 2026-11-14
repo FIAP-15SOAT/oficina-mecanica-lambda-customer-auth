@@ -19,19 +19,19 @@ const SECRET_PATTERNS: readonly NamedPattern[] = [
     name: 'auth-scheme',
     pattern: /\b(?:Bearer|Basic|Digest|Token|ApiKey)\s+[a-z0-9._~+/=-]{8,}/gi,
   },
-  // URL com usuário:senha embutidos — o caso concreto é o DATABASE_URL
-  // (`postgresql://user:senha@host/db`) aparecendo num erro do Prisma.
+  // URL with embedded user:password — the concrete case is DATABASE_URL
+  // (`postgresql://user:password@host/db`) showing up in a Prisma error.
   //
-  // A senha exclui `/`, `?` e `#` porque a RFC 3986 exige que eles venham
-  // percent-encoded dentro do userinfo. Sem essa exclusão o quantificador
-  // varria até o fim do texto procurando um `@` que não vinha, e um trecho como
-  // `a://b:` repetido custava O(n²) — 12,6 ms em 8 KB. Com ela, o `://` do
-  // próximo trecho encerra a varredura do anterior, e o custo vira linear.
+  // The password excludes `/`, `?` and `#` because RFC 3986 requires them to be
+  // percent-encoded inside the userinfo. Without that exclusion the quantifier
+  // scanned to the end of the text looking for an `@` that never came, and a run
+  // like `a://b:` repeated cost O(n²) — 12.6 ms on 8 KB. With it, the `://` of
+  // the next run ends the scan of the previous one, and the cost becomes linear.
   {
     name: 'url-credentials',
     pattern: /(?<![A-Za-z0-9+.-])[a-zA-Z](?=([a-zA-Z0-9+.-]*))\1:\/\/[^\s:/@]+:[^\s@/?#]+@\S+/g,
   },
-  // Par chave=valor sensível em query string ou connection string.
+  // Sensitive key=value pair in a query string or connection string.
   { name: 'key-value', pattern: /\b(?:password|pwd|secret|api[_-]?key)=[^;&\s]+/gi },
 ];
 
@@ -54,9 +54,9 @@ export function truncateText(value: string, maxLength: number = MAX_TEXT_LENGTH)
 }
 
 /**
- * Varre texto livre atrás de conteúdo sensível que não foi capturado pelo nome do
- * campo — mensagem de exceção, stack trace, user-agent. Segredo é removido;
- * PII é mascarada preservando a forma.
+ * Scans free text for sensitive content the field name did not catch —
+ * exception message, stack trace, user-agent. Secrets are removed; PII is
+ * masked keeping its shape.
  */
 export function sanitizeText(value: string, maxLength: number = MAX_TEXT_LENGTH): string {
   const bounded = truncateText(value, maxLength);

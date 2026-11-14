@@ -10,9 +10,9 @@ describe('Cpf', () => {
   );
 
   /**
-   * A normalização remove **todo** caractere não numérico, e não só pontuação:
-   * o valor consultado precisa corresponder exatamente aos 11 dígitos que a API
-   * persiste, e um CPF digitado com espaços não pode virar linha não encontrada.
+   * Normalization strips **every** non-digit character, not only punctuation:
+   * the value looked up must match exactly the 11 digits the API stores, and a
+   * CPF typed with spaces must not become a row not found.
    */
   it.each([
     ['123.456.789-09', '12345678909'],
@@ -37,9 +37,9 @@ describe('Cpf', () => {
   });
 
   /**
-   * A forma pontuada existe para o log: sobre ela o mascarador preserva o
-   * formato (`***.***.789-09`), enquanto sobre os 11 dígitos crus produziria
-   * `12***09`, que revela o começo e destrói a forma.
+   * The punctuated form exists for the log: on it the masker keeps the shape
+   * (`***.***.789-09`), while on the 11 raw digits it would produce `12***09`,
+   * which reveals the start and destroys the shape.
    */
   it('should expose the punctuated form used by the log', () => {
     expect(Cpf.create('12345678909').formatted).toBe('123.456.789-09');
