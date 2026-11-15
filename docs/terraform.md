@@ -238,7 +238,7 @@ convenção de nome e não remove a rota automaticamente.
 Pré-requisitos de nuvem:
 
 - Infra-base, Kubernetes e gateway aplicados, na ordem do grafo acima.
-- Identity e work-order implantados no cluster, para que os quality gates da entrega
+- Identity e work-order implantados no cluster, para que as verificações da entrega
   aprovem.
 - AWS CLI, Terraform ≥ 1.11 e credenciais AWS válidas.
 - Role existente (`LabRole` por padrão), com trust Lambda, acesso ao segredo da
@@ -247,7 +247,7 @@ Pré-requisitos de nuvem:
   e chave pública correspondente configurada no work-order.
 
 O CD é o roteiro completo: constrói, aplica, grava a chave idempotentemente
-e executa os três quality gates. Um `terraform apply` local cria somente o contêiner
+e executa as três verificações pós-implantação. Um `terraform apply` local cria somente o contêiner
 do segredo; não grava o PEM, e a função só fica utilizável depois dessa escrita.
 
 ```bash
@@ -256,7 +256,7 @@ terraform apply
 # Conferir os identificadores; nenhuma saída contém a chave privada
 terraform output function_name
 terraform output jwt_private_key_secret_arn
-# Preferir o CD para gravar a chave e executar os quality gates de implantação
+# Preferir o CD para gravar a chave e executar as verificações pós-implantação
 ```
 
 Para remover o ambiente, remova a Lambda antes do gateway, do cluster e da rede:
