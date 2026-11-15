@@ -9,7 +9,8 @@ work-order já sabe verificar.
 ![Node](https://img.shields.io/badge/Node.js-24-339933?logo=node.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)
 ![AWS Lambda](https://img.shields.io/badge/AWS%20Lambda-FF9900?logo=awslambda&logoColor=white)
-![Cobertura](https://img.shields.io/badge/cobertura-100%25-brightgreen)
+[![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=FIAP-15SOAT_oficina-mecanica-lambda-customer-auth&metric=coverage)](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-lambda-customer-auth)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=FIAP-15SOAT_oficina-mecanica-lambda-customer-auth&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-lambda-customer-auth)
 
 [![CI](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/actions/workflows/ci.yml/badge.svg)](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/actions/workflows/ci.yml)
 [![SAST](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/actions/workflows/sast.yml/badge.svg)](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/actions/workflows/sast.yml)
@@ -170,7 +171,7 @@ Todos rodam a partir de `app/`.
 | 📊 [Logging](docs/logging.md) | Envelope, dicionário completo, eventos, níveis e a tabela de divergências |
 | 💻 [Como executar localmente](docs/local-setup.md) | A invocação avulsa, o stub local e os serviços locais |
 | 🧪 [Testes](docs/testing.md) | Os dois níveis, o stub e as fixtures, propriedades travadas por teste e cobertura |
-| 🔁 [CI/CD](docs/ci-cd.md) | Os três workflows, cada job e o que o reprova, os três portões pós-implantação, o inventário de configuração externa e o guia de solução de problemas |
+| 🔁 [CI/CD](docs/ci-cd.md) | Os três workflows, cada job e o que o reprova, as três verificações pós-implantação, o inventário de configuração externa e o guia de solução de problemas |
 | ☁️ [Infraestrutura](docs/terraform.md) | O que a stack provisiona, a fronteira entre repositórios, o consumo de state remoto e as variáveis da função |
 | 🔭 [Observabilidade](docs/observability.md) | Os sinais que a função produz, a camada que os coleta, os eixos de correlação e o que não é instrumentado |
 | 📐 [ADR 0001](docs/adr/0001-driver-em-vez-de-orm.md) | Driver em vez de ORM (substituído pelo ADR 0007) |
@@ -206,8 +207,8 @@ dono do dado.
   work-order.
 - A esteira valida toda mudança em seis verificações paralelas (Lint, Type
   Check, Unit Tests, E2E Tests, Package e Terraform Validation), a análise
-  estática impõe o seu portão de qualidade, e a entrega provisiona a função e a
-  publica — terminando em **três portões**: a invocação direta e a rota pública,
+  estática impõe o seu quality gate, e a entrega provisiona a função e a
+  publica — terminando em **três verificações pós-implantação**: a invocação direta e a rota pública,
   ambas exigindo recusa de uma credencial inexistente, e o login de um cliente
   semeado, cujo token o work-order precisa aceitar.
 - A infraestrutura vive em [`infra/`](infra/): a função em subnets
